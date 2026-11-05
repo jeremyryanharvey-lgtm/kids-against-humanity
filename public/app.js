@@ -35,7 +35,7 @@ function render(s){
   }
 }
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-$("create").onclick=async()=>{try{const name=$("name").value.trim()||"Host";const d=await api("/api/rooms",{});code=d.code;playerId=d.playerId;isHost=true;showRoom();connect();msg("")}catch(e){msg(e.message)}};
+$("create").onclick=async()=>{try{const name=$("name").value.trim()||"Host";const d=await api("/api/rooms",{name});code=d.code;playerId=d.playerId;isHost=true;showRoom();connect();msg("")}catch(e){msg(e.message)}};
 $("join").onclick=async()=>{try{code=$("code").value.trim().toUpperCase();const name=$("name").value.trim();if(!name)throw Error("Enter your name first.");const d=await api(`/api/rooms/${code}/join`,{name});playerId=d.playerId;isHost=false;showRoom();connect();msg("")}catch(e){msg(e.message)}};
 $("start").onclick=()=>send("start");
 if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});

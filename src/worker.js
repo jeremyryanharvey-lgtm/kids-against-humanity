@@ -1,3 +1,4 @@
+
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -9,6 +10,9 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/rooms" && request.method === "POST") {
+      const body = await request.json();
+      const name = String(body.name || "Host").trim().slice(0, 18) || "Host";
+
       const code = Math.random().toString(36).slice(2, 8).toUpperCase();
       const id = env.GAME_ROOMS.idFromName(code);
       const room = env.GAME_ROOMS.get(id);
@@ -17,7 +21,7 @@ export default {
       const init = await room.fetch("https://room/init", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code, hostId })
+        body: JSON.stringify({ code, hostId, name })
       });
 
       if (!init.ok) return json({ error: "Couldn't create room." }, 500);
@@ -106,7 +110,7 @@ export class GameRoom {
 
     if (url.pathname === "/init" && request.method === "POST") {
       if (!this.state) {
-        const {code, hostId} = await request.json();
+        const {code, hostId, name} = await request.json();
         this.state = {
           code,
           hostId,
@@ -115,7 +119,7 @@ export class GameRoom {
           judgeIndex: 0,
           judgeId: hostId,
           targetScore: 5,
-          players: [{id:hostId,name:"Host",score:0,online:true}],
+          players: [{id:hostId,name: name || "Host",score:0,online:true}],
           question: null,
           submissions: [],
           revealed: false,
@@ -247,4 +251,3 @@ export class GameRoom {
     await this.broadcast();
   }
 }
-

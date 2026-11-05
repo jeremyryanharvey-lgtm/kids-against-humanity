@@ -1,4 +1,16 @@
 {
-  "name":"Kids Against Humanity","short_name":"Kids Against","start_url":"/","display":"standalone","background_color":"#f3f5fb","theme_color":"#18213a",
-  "icons":[{"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+  "name": "Kids Against Maturity",
+  "short_name": "Kids Against Maturity",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f5fb",
+  "theme_color": "#18213a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

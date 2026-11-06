@@ -1,5 +1,4 @@
 
-
 const $ = id => document.getElementById(id);
 
 let code = "";
@@ -68,16 +67,16 @@ function send(type, extra = {}) {
 function render(s) {
   const inGame = s.status !== "lobby";
 
-  // Remove all lobby branding and information during the game.
+  // Hide all lobby branding and information during gameplay.
   $("siteHeader").classList.toggle("hidden", inGame);
   $("roomCode").classList.toggle("hidden", inGame);
   $("roomCode").previousElementSibling.classList.toggle("hidden", inGame);
   $("players").classList.toggle("hidden", inGame);
   $("players").previousElementSibling.classList.toggle("hidden", inGame);
 
-  $("status").textContent = inGame
-    ? `Round ${s.round || 1}`
-    : "Waiting for players";
+  // Hide the lobby status during gameplay.
+  $("status").classList.toggle("hidden", inGame);
+  $("status").textContent = inGame ? "" : "Waiting for players";
 
   $("players").innerHTML = s.players.map(p =>
     `<li>${escapeHtml(p.name)} — ${p.score} points ${p.id === s.judgeId ? "👑 Judge" : ""} ${p.online ? "" : "(offline)"}</li>`
@@ -118,10 +117,6 @@ function render(s) {
     return;
   }
 
-  const round = document.createElement("p");
-  round.textContent = `Round ${s.round || 1}`;
-  area.append(round);
-
   const question = document.createElement("h2");
   question.className = "question";
   question.textContent = s.question || "";
@@ -136,11 +131,13 @@ function render(s) {
       waiting.textContent =
         "You're judging this round. Waiting for the other players...";
       area.append(waiting);
+
     } else if (hand.length < 10) {
       const waiting = document.createElement("p");
       waiting.textContent =
         "Your card has been submitted. Waiting for the judge...";
       area.append(waiting);
+
     } else {
       const heading = document.createElement("h3");
       heading.textContent = "Choose one answer card";
@@ -191,6 +188,7 @@ function render(s) {
 
         area.append(button);
       });
+
     } else {
       const waiting = document.createElement("p");
       waiting.textContent =
@@ -222,6 +220,7 @@ function render(s) {
       button.textContent = "Next round";
       button.onclick = () => send("next");
       area.append(button);
+
     } else {
       const waiting = document.createElement("p");
       waiting.textContent =
@@ -253,6 +252,7 @@ $("create").onclick = async () => {
     showRoom();
     connect();
     msg("");
+
   } catch (e) {
     msg(e.message);
   }
@@ -274,6 +274,7 @@ $("join").onclick = async () => {
     showRoom();
     connect();
     msg("");
+
   } catch (e) {
     msg(e.message);
   }

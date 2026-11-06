@@ -1,4 +1,5 @@
 
+
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -17,6 +18,31 @@ const shuffle = items => {
 };
 
 // --------------------------------------------------
+// CARD STATISTICS
+// --------------------------------------------------
+
+async function recordCardStat(env, card, event) {
+  if (!card || !card.id) return;
+
+  try {
+    const id = env.CARD_STATS.idFromName("global");
+    const stats = env.CARD_STATS.get(id);
+
+    await stats.fetch("https://stats/record", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        cardId: String(card.id),
+        text: String(card.text || ""),
+        event
+      })
+    });
+  } catch (error) {
+    console.error("Card statistics error:", error);
+  }
+}
+
+// --------------------------------------------------
 // GAME TIMER SETTINGS
 // --------------------------------------------------
 
@@ -27,7 +53,6 @@ const TURN_TIME = 90 * 1000;
 // --------------------------------------------------
 
 const PROFANITY = [
-  // Strong profanity
   "fuck", "fucker", "fuckers", "fucking", "fucked",
   "fuckface", "fuckhead", "fuckwit",
   "motherfucker", "motherfuckers", "motherfucking",
@@ -43,7 +68,6 @@ const PROFANITY = [
   "twat", "twats", "wanker", "wankers", "wanking",
   "prick", "pricks", "bollocks", "bugger", "buggers",
 
-  // Milder profanity and insults
   "damn", "dammit", "goddamn", "goddammit",
   "crap", "crappy", "crapper",
   "hell", "bloody",
@@ -52,7 +76,6 @@ const PROFANITY = [
   "jerkoff", "moron", "morons", "idiot", "idiots",
   "slut", "sluts", "whore", "whores",
 
-  // Sexual language
   "penis", "vagina", "boobs", "boobies",
   "tits", "titty", "titties",
   "ballsack", "nutsack", "boner",
@@ -60,7 +83,6 @@ const PROFANITY = [
   "masturbation", "orgasm", "orgasms",
   "dildo", "porn", "porno", "pornography",
 
-  // Common alternative spellings
   "fuk", "fuking", "fukin", "fck", "fcking",
   "phuck", "fuq", "fuqq", "fux",
   "shyt", "shiit", "shitt", "sh1t",
@@ -69,51 +91,20 @@ const PROFANITY = [
   "bstrd", "bastid", "douchbag"
 ];
 
-// Characters that can be used to disguise letters.
 const CONFUSABLES = {
-  // Numbers and symbols
-  "0": "o",
-  "1": "i",
-  "3": "e",
-  "4": "a",
-  "5": "s",
-  "7": "t",
-  "8": "b",
-  "@": "a",
-  "$": "s",
-
-  // Cyrillic lookalikes
-  "а": "a",
-  "с": "c",
-  "е": "e",
-  "і": "i",
-  "о": "o",
-  "р": "p",
-  "х": "x",
-  "у": "y",
-  "к": "k",
-  "м": "m",
-  "т": "t",
-  "в": "b",
-  "н": "h",
-  "ј": "j",
-
-  // Greek lookalikes
-  "α": "a",
-  "β": "b",
-  "ε": "e",
-  "ι": "i",
-  "κ": "k",
-  "ο": "o",
-  "ρ": "p",
-  "τ": "t",
-  "υ": "u",
-  "χ": "x"
+  "0": "o", "1": "i", "3": "e", "4": "a",
+  "5": "s", "7": "t", "8": "b", "@": "a", "$": "s",
+  "а": "a", "с": "c", "е": "e", "і": "i",
+  "о": "o", "р": "p", "х": "x", "у": "y",
+  "к": "k", "м": "m", "т": "t", "в": "b",
+  "н": "h", "ј": "j",
+  "α": "a", "β": "b", "ε": "e", "ι": "i",
+  "κ": "k", "ο": "o", "ρ": "p", "τ": "t",
+  "υ": "u", "χ": "x"
 };
 
 function normaliseCharacter(char) {
   const lower = char.toLowerCase();
-
   const mapped = CONFUSABLES[lower] || lower;
 
   return mapped
@@ -133,11 +124,9 @@ const PROFANITY_SET = new Set(
   PROFANITY.map(normaliseWord)
 );
 
-// Returns normalised letters and their original positions.
 function normaliseWithPositions(value, offset = 0) {
   let text = "";
   const positions = [];
-
   let index = offset;
 
   for (const character of value) {
@@ -157,15 +146,11 @@ function normaliseWithPositions(value, offset = 0) {
 function filterProfanity(message) {
   const original = String(message);
   const blockedRanges = [];
-
-  // Find normal words and disguised words inside individual
-  // sections of text.
   const tokens = [];
 
   for (const match of original.matchAll(/\S+/gu)) {
     const start = match.index;
     const value = match[0];
-
     const normalised = normaliseWithPositions(value, start);
 
     tokens.push({
@@ -176,7 +161,6 @@ function filterProfanity(message) {
     });
   }
 
-  // Check individual words.
   for (const token of tokens) {
     if (!token.text) continue;
 
@@ -208,10 +192,6 @@ function filterProfanity(message) {
     }
   }
 
-  // Check separated single letters, such as:
-  // f u c k
-  // f.u.c.k
-  // f - u - c - k
   let group = [];
 
   const checkGroup = () => {
@@ -225,7 +205,6 @@ function filterProfanity(message) {
     for (const badWord of PROFANITY_SET) {
       if (combined.includes(badWord)) {
         const found = combined.indexOf(badWord);
-
         const startToken = group[found];
         const endToken = group[found + badWord.length - 1];
 
@@ -258,7 +237,6 @@ function filterProfanity(message) {
 
   checkGroup();
 
-  // Sort and merge overlapping matches.
   blockedRanges.sort((a, b) => a.start - b.start);
 
   const merged = [];
@@ -273,7 +251,6 @@ function filterProfanity(message) {
     }
   }
 
-  // Replace offending characters with asterisks.
   const result = original.split("");
 
   for (const range of merged) {
@@ -294,6 +271,17 @@ function filterProfanity(message) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // CARD STATISTICS API
+    if (
+      url.pathname === "/api/stats" &&
+      request.method === "GET"
+    ) {
+      const id = env.CARD_STATS.idFromName("global");
+      const stats = env.CARD_STATS.get(id);
+
+      return stats.fetch("https://stats/list");
+    }
 
     if (url.pathname === "/api/rooms" && request.method === "POST") {
       const body = await request.json();
@@ -338,10 +326,7 @@ export default {
 
         const data = await response.json();
 
-        return json(
-          { ...data, playerId },
-          response.status
-        );
+        return json({ ...data, playerId }, response.status);
       }
 
       if (action === "socket") {
@@ -445,7 +430,7 @@ export class GameRoom {
     await this.ctx.storage.setAlarm(Math.min(...deadlines));
   }
 
-  recordAutomaticSubmission(player) {
+  async recordAutomaticSubmission(player) {
     const s = this.state;
 
     if (!player || !player.hand || player.hand.length === 0) {
@@ -464,10 +449,12 @@ export class GameRoom {
       answer: card.text
     });
 
+    await recordCardStat(this.env, card, "submitted");
+
     return true;
   }
 
-  resolveWinner(chosen) {
+  async resolveWinner(chosen) {
     const s = this.state;
 
     if (!chosen) return;
@@ -479,6 +466,12 @@ export class GameRoom {
     if (winner) {
       winner.score += 1;
     }
+
+    await recordCardStat(
+      this.env,
+      { id: chosen.cardId, text: chosen.answer },
+      "selected"
+    );
 
     s.winnerId = chosen.playerId;
     s.submissionDeadlines = {};
@@ -492,7 +485,7 @@ export class GameRoom {
       }
     } else {
       s.status = "between";
-      this.dealHands();
+      await this.dealHands();
     }
   }
 
@@ -511,8 +504,6 @@ export class GameRoom {
       s.submissionDeadlines = {};
     }
 
-    // Automatically submit random cards for players
-    // whose individual 90-second timers have expired.
     for (const [playerId, deadline] of Object.entries(
       s.submissionDeadlines
     )) {
@@ -525,14 +516,13 @@ export class GameRoom {
         playerId !== s.judgeId &&
         !s.submissions.some(x => x.playerId === playerId)
       ) {
-        this.recordAutomaticSubmission(player);
+        await this.recordAutomaticSubmission(player);
       }
 
       delete s.submissionDeadlines[playerId];
       changed = true;
     }
 
-    // If everyone has submitted, start the judge's timer.
     if (s.submissions.length >= s.players.length - 1) {
       if (!s.revealed || !s.judgeDeadline) {
         this.startJudgeTimerIfReady();
@@ -540,8 +530,6 @@ export class GameRoom {
       }
     }
 
-    // Automatically select a random answer if the judge's
-    // separate 90-second timer expires.
     if (
       s.revealed &&
       s.judgeDeadline &&
@@ -551,7 +539,7 @@ export class GameRoom {
       const index = Math.floor(Math.random() * s.submissions.length);
       const chosen = s.submissions[index];
 
-      this.resolveWinner(chosen);
+      await this.resolveWinner(chosen);
       changed = true;
     }
 
@@ -649,7 +637,7 @@ export class GameRoom {
     return card.text;
   }
 
-  drawAnswer() {
+  async drawAnswer() {
     const s = this.state;
 
     if (s.answerDeck.length === 0 && s.answerDiscard.length > 0) {
@@ -661,13 +649,17 @@ export class GameRoom {
       throw new Error("No answer cards available.");
     }
 
-    return s.answerDeck.shift();
+    const card = s.answerDeck.shift();
+
+    await recordCardStat(this.env, card, "drawn");
+
+    return card;
   }
 
-  dealHands() {
+  async dealHands() {
     for (const player of this.state.players) {
       while (player.hand.length < 10) {
-        player.hand.push(this.drawAnswer());
+        player.hand.push(await this.drawAnswer());
       }
     }
   }
@@ -1177,7 +1169,7 @@ export class GameRoom {
           p.inLobby = false;
         }
 
-        this.dealHands();
+        await this.dealHands();
 
         s.status = "playing";
         s.round = 1;
@@ -1188,7 +1180,6 @@ export class GameRoom {
         s.revealed = false;
         s.winnerId = null;
 
-        // Start each non-judge player's 90-second timer.
         this.startSubmissionTimers();
 
       } catch (error) {
@@ -1235,11 +1226,12 @@ export class GameRoom {
         answer: card.text
       });
 
+      await recordCardStat(this.env, card, "submitted");
+
       if (s.submissionDeadlines) {
         delete s.submissionDeadlines[playerId];
       }
 
-      // The judge's timer starts only when every answer is in.
       this.startJudgeTimerIfReady();
     }
 
@@ -1256,7 +1248,7 @@ export class GameRoom {
 
       if (!chosen) return;
 
-      this.resolveWinner(chosen);
+      await this.resolveWinner(chosen);
     }
 
     // HOST ADVANCES TO NEXT ROUND
@@ -1274,7 +1266,6 @@ export class GameRoom {
       s.winnerId = null;
       s.status = "playing";
 
-      // Start fresh 90-second timers for the new round.
       this.startSubmissionTimers();
     }
 
@@ -1307,5 +1298,67 @@ export class GameRoom {
 
   async webSocketError(ws) {
     await this.webSocketClose(ws);
+  }
+}
+
+// --------------------------------------------------
+// PERMANENT CARD STATISTICS DURABLE OBJECT
+// --------------------------------------------------
+
+export class CardStats {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/record" && request.method === "POST") {
+      const body = await request.json();
+
+      if (
+        !body.cardId ||
+        !["drawn", "submitted", "selected"].includes(body.event)
+      ) {
+        return json({ error: "Invalid statistics entry." }, 400);
+      }
+
+      const stats = await this.ctx.storage.get("stats") || {};
+
+      if (!stats[body.cardId]) {
+        stats[body.cardId] = {
+          cardId: body.cardId,
+          text: body.text || "",
+          drawn: 0,
+          submitted: 0,
+          selected: 0
+        };
+      }
+
+      const card = stats[body.cardId];
+
+      if (body.text) {
+        card.text = body.text;
+      }
+
+      card[body.event] += 1;
+
+      await this.ctx.storage.put("stats", stats);
+
+      return json({ ok: true });
+    }
+
+    if (url.pathname === "/list" && request.method === "GET") {
+      const stats = await this.ctx.storage.get("stats") || {};
+
+      return json({
+        cards: Object.values(stats).sort((a, b) =>
+          a.cardId.localeCompare(b.cardId)
+        )
+      });
+    }
+
+    return json({ error: "Not found." }, 404);
   }
 }

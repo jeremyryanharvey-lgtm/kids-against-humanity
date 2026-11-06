@@ -1,4 +1,5 @@
 
+
 const $ = id => document.getElementById(id);
 
 let code = "";
@@ -67,16 +68,16 @@ function send(type, extra = {}) {
 function render(s) {
   const inGame = s.status !== "lobby";
 
-  // Hide lobby information once the game starts.
+  // Remove all lobby branding and information during the game.
+  $("siteHeader").classList.toggle("hidden", inGame);
   $("roomCode").classList.toggle("hidden", inGame);
   $("roomCode").previousElementSibling.classList.toggle("hidden", inGame);
   $("players").classList.toggle("hidden", inGame);
   $("players").previousElementSibling.classList.toggle("hidden", inGame);
 
-  $("status").textContent =
-    inGame
-      ? `Round ${s.round || 1}`
-      : "Waiting for players";
+  $("status").textContent = inGame
+    ? `Round ${s.round || 1}`
+    : "Waiting for players";
 
   $("players").innerHTML = s.players.map(p =>
     `<li>${escapeHtml(p.name)} — ${p.score} points ${p.id === s.judgeId ? "👑 Judge" : ""} ${p.online ? "" : "(offline)"}</li>`
@@ -105,7 +106,7 @@ function render(s) {
     area.innerHTML = `
       <h2>🏆 Game over!</h2>
       <h3>${escapeHtml(winner?.name || "Winner")} wins!</h3>
-      <p>They reached 5 points!</p>
+      <p>They reached ${s.targetScore || 5} points!</p>
       <h3>Final scores</h3>
       <ul>
         ${[...s.players].sort((a, b) => b.score - a.score)
@@ -116,6 +117,10 @@ function render(s) {
 
     return;
   }
+
+  const round = document.createElement("p");
+  round.textContent = `Round ${s.round || 1}`;
+  area.append(round);
 
   const question = document.createElement("h2");
   question.className = "question";
@@ -212,16 +217,10 @@ function render(s) {
 
     area.append(result);
 
-    const nextText = document.createElement("p");
-    nextText.textContent = "The next round is ready.";
-    area.append(nextText);
-
     if (isHost) {
       const button = document.createElement("button");
-
       button.textContent = "Next round";
       button.onclick = () => send("next");
-
       area.append(button);
     } else {
       const waiting = document.createElement("p");

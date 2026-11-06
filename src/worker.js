@@ -47,6 +47,7 @@ async function recordCardStat(env, card, event) {
 // --------------------------------------------------
 
 const TURN_TIME = 90 * 1000;
+const DISCONNECT_GRACE = 5 * 60 * 1000;
 
 // --------------------------------------------------
 // PROFANITY FILTER
@@ -272,7 +273,6 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // CARD STATISTICS API
     if (
       url.pathname === "/api/stats" &&
       request.method === "GET"
@@ -412,14 +412,19 @@ export class GameRoom {
   async scheduleAlarm() {
     const s = this.state;
 
-    if (!s || s.status !== "playing") {
+    if (!s) {
       await this.ctx.storage.deleteAlarm();
       return;
     }
 
     const deadlines = [
-      ...Object.values(s.submissionDeadlines || {}),
-      ...(s.judgeDeadline ? [s.judgeDeadline] : [])
+      ...Object.values(s.disconnectDeadlines || {}),
+      ...(s.status === "playing"
+        ? [
+            ...Object.values(s.submissionDeadlines || {}),
+            ...(s.judgeDeadline ? [s.judgeDeadline] : [])
+          ]
+        : [])
     ].filter(Number.isFinite);
 
     if (!deadlines.length) {
@@ -489,58 +494,93 @@ export class GameRoom {
     }
   }
 
-  // Cloudflare Durable Object alarm.
+  // --------------------------------------------------
+  // DURABLE OBJECT ALARM
+  // --------------------------------------------------
+
   async alarm() {
     const s = await this.load();
 
-    if (!s || s.status !== "playing") {
-      return;
-    }
+    if (!s) return;
 
     let changed = false;
     const now = Date.now();
 
-    if (!s.submissionDeadlines) {
-      s.submissionDeadlines = {};
+    // Process expired disconnect grace periods.
+    if (!s.disconnectDeadlines) {
+      s.disconnectDeadlines = {};
     }
 
     for (const [playerId, deadline] of Object.entries(
-      s.submissionDeadlines
+      s.disconnectDeadlines
     )) {
       if (deadline > now) continue;
 
+      delete s.disconnectDeadlines[playerId];
+
       const player = s.players.find(p => p.id === playerId);
 
-      if (
-        player &&
-        playerId !== s.judgeId &&
-        !s.submissions.some(x => x.playerId === playerId)
-      ) {
-        await this.recordAutomaticSubmission(player);
+      const hasOpenSocket = this.ctx.getWebSockets().some(ws => {
+        if (ws.readyState !== WebSocket.OPEN) return false;
+
+        try {
+          return ws.deserializeAttachment()?.playerId === playerId;
+        } catch {
+          return false;
+        }
+      });
+
+      if (player && !hasOpenSocket && player.online) {
+        player.online = false;
       }
 
-      delete s.submissionDeadlines[playerId];
       changed = true;
     }
 
-    if (s.submissions.length >= s.players.length - 1) {
-      if (!s.revealed || !s.judgeDeadline) {
-        this.startJudgeTimerIfReady();
+    // Process game timers only while a game is playing.
+    if (s.status === "playing") {
+      if (!s.submissionDeadlines) {
+        s.submissionDeadlines = {};
+      }
+
+      for (const [playerId, deadline] of Object.entries(
+        s.submissionDeadlines
+      )) {
+        if (deadline > now) continue;
+
+        const player = s.players.find(p => p.id === playerId);
+
+        if (
+          player &&
+          playerId !== s.judgeId &&
+          !s.submissions.some(x => x.playerId === playerId)
+        ) {
+          await this.recordAutomaticSubmission(player);
+        }
+
+        delete s.submissionDeadlines[playerId];
         changed = true;
       }
-    }
 
-    if (
-      s.revealed &&
-      s.judgeDeadline &&
-      s.judgeDeadline <= now &&
-      s.submissions.length > 0
-    ) {
-      const index = Math.floor(Math.random() * s.submissions.length);
-      const chosen = s.submissions[index];
+      if (s.submissions.length >= s.players.length - 1) {
+        if (!s.revealed || !s.judgeDeadline) {
+          this.startJudgeTimerIfReady();
+          changed = true;
+        }
+      }
 
-      await this.resolveWinner(chosen);
-      changed = true;
+      if (
+        s.revealed &&
+        s.judgeDeadline &&
+        s.judgeDeadline <= now &&
+        s.submissions.length > 0
+      ) {
+        const index = Math.floor(Math.random() * s.submissions.length);
+        const chosen = s.submissions[index];
+
+        await this.resolveWinner(chosen);
+        changed = true;
+      }
     }
 
     await this.save();
@@ -855,7 +895,8 @@ export class GameRoom {
           chat: [],
 
           submissionDeadlines: {},
-          judgeDeadline: null
+          judgeDeadline: null,
+          disconnectDeadlines: {}
         };
 
         await this.save();
@@ -921,8 +962,17 @@ export class GameRoom {
       this.ctx.acceptWebSocket(server);
       server.serializeAttachment({ playerId });
 
+      if (!this.state.disconnectDeadlines) {
+        this.state.disconnectDeadlines = {};
+      }
+
+      // Cancel any pending offline countdown when the player reconnects.
+      delete this.state.disconnectDeadlines[playerId];
+
       player.online = true;
+
       await this.save();
+      await this.scheduleAlarm();
 
       server.send(JSON.stringify({
         type: "state",
@@ -1019,6 +1069,10 @@ export class GameRoom {
 
       if (s.submissionDeadlines) {
         delete s.submissionDeadlines[playerId];
+      }
+
+      if (s.disconnectDeadlines) {
+        delete s.disconnectDeadlines[playerId];
       }
 
       if (s.players.length === 0) {
@@ -1279,20 +1333,50 @@ export class GameRoom {
   // --------------------------------------------------
 
   async webSocketClose(ws) {
-    const attachment = ws.deserializeAttachment();
-    const playerId = attachment?.playerId;
+    let attachment;
 
+    try {
+      attachment = ws.deserializeAttachment();
+    } catch {
+      return;
+    }
+
+    const playerId = attachment?.playerId;
     const s = await this.load();
 
-    if (!s) return;
+    if (!s || !playerId) return;
 
     const player = s.players.find(p => p.id === playerId);
 
-    if (player) {
-      player.online = false;
-      await this.save();
+    if (!player) return;
+
+    // Another connection for this player means they have reconnected.
+    const anotherOpenSocket = this.ctx.getWebSockets().some(otherWs => {
+      if (otherWs === ws || otherWs.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      try {
+        return otherWs.deserializeAttachment()?.playerId === playerId;
+      } catch {
+        return false;
+      }
+    });
+
+    if (anotherOpenSocket) return;
+
+    if (!s.disconnectDeadlines) {
+      s.disconnectDeadlines = {};
     }
 
+    // Do not restart an existing countdown if close/error fires twice.
+    if (!s.disconnectDeadlines[playerId]) {
+      s.disconnectDeadlines[playerId] = Date.now() + DISCONNECT_GRACE;
+    }
+
+    // Keep the player online during the five-minute grace period.
+    await this.save();
+    await this.scheduleAlarm();
     await this.broadcast();
   }
 

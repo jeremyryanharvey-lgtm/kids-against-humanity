@@ -1,4 +1,5 @@
-const CACHE = "kam-shell-v3";
+
+const CACHE = "kam-shell-v4";
 
 const FILES = [
   "/",

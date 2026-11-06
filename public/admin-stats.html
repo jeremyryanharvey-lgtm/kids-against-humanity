@@ -1,168 +1,342 @@
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KAM - Card Statistics</title>
-  <style>
-    * { box-sizing: border-box; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KAM - Card Statistics</title>
 
-    body {
-      margin: 0;
-      padding: 24px;
-      background: #151515;
-      color: #f5f5f5;
-      font-family: Arial, sans-serif;
-    }
+<style>
+* { box-sizing: border-box; }
 
-    main {
-      max-width: 1100px;
-      margin: auto;
-    }
+body {
+  margin: 0;
+  padding: 24px;
+  background: #151515;
+  color: #f5f5f5;
+  font-family: Arial, sans-serif;
+}
 
-    h1 { margin-bottom: 6px; }
+main { max-width: 1100px; margin: auto; }
 
-    .muted { color: #aaa; }
+h1 { margin-bottom: 6px; }
 
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin: 24px 0;
-    }
+.muted { color: #aaa; }
 
-    input, select {
-      padding: 12px;
-      border: 1px solid #555;
-      border-radius: 6px;
-      background: #252525;
-      color: white;
-      font-size: 15px;
-    }
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 24px 0;
+}
 
-    input { flex: 1; min-width: 180px; }
+.stat {
+  background: #252525;
+  padding: 16px;
+  border-radius: 8px;
+}
 
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px;
-      margin: 20px 0;
-    }
+.stat strong {
+  display: block;
+  font-size: 25px;
+  margin-top: 6px;
+}
 
-    .stat {
-      background: #252525;
-      padding: 16px;
-      border-radius: 8px;
-    }
+.panel {
+  background: #252525;
+  padding: 16px;
+  border-radius: 8px;
+  margin: 20px 0;
+}
 
-    .stat strong {
-      display: block;
-      font-size: 25px;
-      margin-top: 6px;
-    }
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 15px 0;
+}
 
-    .table-wrap {
-      overflow-x: auto;
-      background: #202020;
-      border-radius: 8px;
-    }
+input, select {
+  padding: 12px;
+  border: 1px solid #555;
+  border-radius: 6px;
+  background: #303030;
+  color: white;
+  font-size: 15px;
+  min-width: 0;
+}
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 650px;
-    }
+input { flex: 1; }
 
-    th, td {
-      padding: 13px;
-      text-align: left;
-      border-bottom: 1px solid #383838;
-    }
+button {
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+}
 
-    th {
-      background: #303030;
-      position: sticky;
-      top: 0;
-    }
+.primary {
+  background: #e4b94d;
+  color: #171717;
+}
 
-    th button {
-      background: none;
-      border: 0;
-      color: white;
-      font-weight: bold;
-      font-size: 14px;
-      cursor: pointer;
-    }
+.secondary {
+  background: #444;
+  color: white;
+}
 
-    td.number { text-align: center; }
+.remove {
+  background: #713b3b;
+  color: white;
+}
 
-    .message {
-      padding: 20px 0;
-      color: #ccc;
-    }
+.sort-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
 
-    button.refresh {
-      padding: 12px 18px;
-      background: #e4b94d;
-      color: #171717;
-      border: 0;
-      border-radius: 6px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-  </style>
+.sort-row select {
+  flex: 1;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: #202020;
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 650px;
+}
+
+th, td {
+  padding: 13px;
+  text-align: left;
+  border-bottom: 1px solid #383838;
+}
+
+th { background: #303030; }
+
+td.number { text-align: center; }
+
+.message {
+  padding: 15px 0;
+  color: #ccc;
+}
+
+@media(max-width: 500px) {
+  body { padding: 16px; }
+  .sort-row select { min-width: 100%; }
+}
+</style>
 </head>
 
 <body>
 <main>
-  <h1>Card Statistics</h1>
-  <div class="muted">Kids Against Maturity · Private admin dashboard</div>
 
-  <div class="summary">
-    <div class="stat">Cards tracked<strong id="totalCards">0</strong></div>
-    <div class="stat">Times drawn<strong id="totalDrawn">0</strong></div>
-    <div class="stat">Times submitted<strong id="totalSubmitted">0</strong></div>
-    <div class="stat">Times selected<strong id="totalSelected">0</strong></div>
-  </div>
+<h1>Card Statistics</h1>
+<div class="muted">Kids Against Maturity · Admin dashboard</div>
+
+<div class="summary">
+  <div class="stat">Cards tracked<strong id="totalCards">0</strong></div>
+  <div class="stat">Times drawn<strong id="totalDrawn">0</strong></div>
+  <div class="stat">Times submitted<strong id="totalSubmitted">0</strong></div>
+  <div class="stat">Times selected<strong id="totalSelected">0</strong></div>
+</div>
+
+<div class="panel">
+  <h3>Custom sorting</h3>
+  <div class="muted">Add as many sorting rules as you like. Rules are applied in order.</div>
+
+  <div id="sortRules"></div>
 
   <div class="controls">
-    <input id="search" type="search" placeholder="Search answer cards...">
-
-    <select id="sort">
-      <option value="selected">Most selected</option>
-      <option value="leastSelected">Least selected</option>
-      <option value="drawn">Most drawn</option>
-      <option value="leastDrawn">Least drawn</option>
-      <option value="submitted">Most submitted</option>
-      <option value="rate">Highest selection rate</option>
-      <option value="lowestRate">Lowest selection rate</option>
-      <option value="alphabetical">Alphabetical</option>
-    </select>
-
-    <button class="refresh" onclick="loadStats()">Refresh</button>
+    <button class="primary" onclick="addSortRule()">+ Add sorting rule</button>
+    <button class="secondary" onclick="resetSort()">Reset sorting</button>
   </div>
+</div>
 
-  <div id="message" class="message">Loading statistics...</div>
+<div class="controls">
+  <input id="search" type="search" placeholder="Search answer cards...">
+  <button class="primary" onclick="loadStats()">Refresh</button>
+</div>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Answer card</th>
-          <th>Drawn</th>
-          <th>Submitted</th>
-          <th>Selected</th>
-          <th>Selection rate</th>
-        </tr>
-      </thead>
-      <tbody id="results"></tbody>
-    </table>
-  </div>
+<div id="message" class="message">Loading statistics...</div>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+  <th>Answer card</th>
+  <th>Drawn</th>
+  <th>Submitted</th>
+  <th>Selected</th>
+  <th>Selection rate</th>
+</tr>
+</thead>
+<tbody id="results"></tbody>
+</table>
+</div>
+
 </main>
 
 <script>
 let cards = [];
+
+const metrics = [
+  { value: "selected", label: "Times selected" },
+  { value: "submitted", label: "Times submitted" },
+  { value: "drawn", label: "Times drawn" },
+  { value: "rate", label: "Selection rate" },
+  { value: "alphabetical", label: "Alphabetical" }
+];
+
+let sortRules = [
+  { metric: "selected", direction: "desc" }
+];
+
+function addSortRule() {
+  if (sortRules.length >= metrics.length) return;
+
+  const available = metrics.find(
+    metric => !sortRules.some(rule => rule.metric === metric.value)
+  );
+
+  if (!available) return;
+
+  sortRules.push({
+    metric: available.value,
+    direction: "desc"
+  });
+
+  renderSortRules();
+  render();
+}
+
+function removeSortRule(index) {
+  if (sortRules.length <= 1) return;
+
+  sortRules.splice(index, 1);
+  renderSortRules();
+  render();
+}
+
+function changeSort(index, field, value) {
+  sortRules[index][field] = value;
+  render();
+}
+
+function resetSort() {
+  sortRules = [
+    { metric: "selected", direction: "desc" }
+  ];
+
+  renderSortRules();
+  render();
+}
+
+function renderSortRules() {
+  const container = document.getElementById("sortRules");
+  container.replaceChildren();
+
+  sortRules.forEach((rule, index) => {
+    const row = document.createElement("div");
+    row.className = "sort-row";
+
+    const label = document.createElement("span");
+    label.textContent = index === 0
+      ? "Sort by:"
+      : "Then by:";
+
+    const metric = document.createElement("select");
+
+    metrics.forEach(item => {
+      const option = document.createElement("option");
+      option.value = item.value;
+      option.textContent = item.label;
+      option.selected = item.value === rule.metric;
+      metric.appendChild(option);
+    });
+
+    metric.addEventListener("change", event =>
+      changeSort(index, "metric", event.target.value)
+    );
+
+    const direction = document.createElement("select");
+
+    [
+      { value: "desc", label: "Highest first" },
+      { value: "asc", label: "Lowest first" }
+    ].forEach(item => {
+      const option = document.createElement("option");
+      option.value = item.value;
+      option.textContent = item.label;
+      option.selected = item.value === rule.direction;
+      direction.appendChild(option);
+    });
+
+    direction.addEventListener("change", event =>
+      changeSort(index, "direction", event.target.value)
+    );
+
+    row.append(label, metric, direction);
+
+    if (sortRules.length > 1) {
+      const remove = document.createElement("button");
+      remove.className = "remove";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", () =>
+        removeSortRule(index)
+      );
+      row.appendChild(remove);
+    }
+
+    container.appendChild(row);
+  });
+
+  const addButton = document.querySelector(
+    'button[onclick="addSortRule()"]'
+  );
+
+  if (addButton) {
+    addButton.disabled = sortRules.length >= metrics.length;
+    addButton.style.opacity = addButton.disabled ? "0.4" : "1";
+  }
+}
+
+function selectionRate(card) {
+  return card.submitted
+    ? card.selected / card.submitted
+    : 0;
+}
+
+function compareCards(a, b) {
+  for (const rule of sortRules) {
+    let result = 0;
+
+    if (rule.metric === "alphabetical") {
+      result = (a.text || "").localeCompare(b.text || "");
+    } else if (rule.metric === "rate") {
+      result = selectionRate(a) - selectionRate(b);
+    } else {
+      result = (a[rule.metric] || 0) - (b[rule.metric] || 0);
+    }
+
+    if (result !== 0) {
+      return rule.direction === "desc" ? -result : result;
+    }
+  }
+
+  return (a.text || "").localeCompare(b.text || "");
+}
 
 async function loadStats() {
   const message = document.getElementById("message");
@@ -179,16 +353,15 @@ async function loadStats() {
     cards = data.cards || [];
 
     document.getElementById("totalCards").textContent = cards.length;
+
     document.getElementById("totalDrawn").textContent =
       cards.reduce((sum, card) => sum + (card.drawn || 0), 0);
+
     document.getElementById("totalSubmitted").textContent =
       cards.reduce((sum, card) => sum + (card.submitted || 0), 0);
+
     document.getElementById("totalSelected").textContent =
       cards.reduce((sum, card) => sum + (card.selected || 0), 0);
-
-    message.textContent = cards.length
-      ? "Statistics loaded."
-      : "No statistics recorded yet.";
 
     render();
   } catch (error) {
@@ -198,67 +371,51 @@ async function loadStats() {
 
 function render() {
   const search = document.getElementById("search").value.toLowerCase();
-  const sort = document.getElementById("sort").value;
 
-  let filtered = cards.filter(card =>
-    (card.text || "").toLowerCase().includes(search) ||
-    String(card.cardId || "").toLowerCase().includes(search)
-  );
-
-  const rate = card => card.submitted
-    ? card.selected / card.submitted
-    : 0;
-
-  const sorters = {
-    selected: (a, b) => b.selected - a.selected,
-    leastSelected: (a, b) => a.selected - b.selected,
-    drawn: (a, b) => b.drawn - a.drawn,
-    leastDrawn: (a, b) => a.drawn - b.drawn,
-    submitted: (a, b) => b.submitted - a.submitted,
-    rate: (a, b) => rate(b) - rate(a),
-    lowestRate: (a, b) => rate(a) - rate(b),
-    alphabetical: (a, b) => (a.text || "").localeCompare(b.text || "")
-  };
-
-  filtered.sort(sorters[sort]);
+  const filtered = cards
+    .filter(card =>
+      (card.text || "").toLowerCase().includes(search) ||
+      String(card.cardId || "").toLowerCase().includes(search)
+    )
+    .sort(compareCards);
 
   const tbody = document.getElementById("results");
   tbody.replaceChildren();
 
   filtered.forEach(card => {
     const tr = document.createElement("tr");
+
     const values = [
       card.text || "",
       card.drawn || 0,
       card.submitted || 0,
       card.selected || 0,
-      (rate(card) * 100).toFixed(1) + "%"
+      (selectionRate(card) * 100).toFixed(1) + "%"
     ];
 
     values.forEach((value, index) => {
       const td = document.createElement("td");
       td.textContent = value;
+
       if (index > 0) td.className = "number";
+
       tr.appendChild(td);
     });
 
     tbody.appendChild(tr);
   });
 
-  if (!filtered.length) {
-    document.getElementById("message").textContent =
-      "No matching cards found.";
-  } else {
-    document.getElementById("message").textContent =
-      "Showing " + filtered.length + " cards.";
-  }
+  document.getElementById("message").textContent =
+    filtered.length
+      ? "Showing " + filtered.length + " cards."
+      : "No matching cards found.";
 }
 
 document.getElementById("search").addEventListener("input", render);
-document.getElementById("sort").addEventListener("change", render);
 
+renderSortRules();
 loadStats();
 </script>
+
 </body>
 </html>
-

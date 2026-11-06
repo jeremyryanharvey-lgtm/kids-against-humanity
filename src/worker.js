@@ -1,287 +1,500 @@
 
-const $ = id => document.getElementById(id);
 
-let code = "";
-let playerId = "";
-let socket = null;
-let isHost = false;
-
-const msg = t => {
-  $("message").textContent = t;
-};
-
-async function api(path, body) {
-  const r = await fetch(path, {
-    method: body ? "POST" : "GET",
-    headers: { "content-type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" }
   });
 
-  const d = await r.json();
-
-  if (!r.ok) throw Error(d.error || "Something went wrong.");
-
-  return d;
-}
-
-function showRoom() {
-  $("home").classList.add("hidden");
-  $("room").classList.remove("hidden");
-  $("roomCode").textContent = code;
-}
-
-function connect() {
-  const scheme = location.protocol === "https:" ? "wss" : "ws";
-
-  socket = new WebSocket(
-    `${scheme}://${location.host}/api/rooms/${code}/socket?playerId=${encodeURIComponent(playerId)}`
-  );
-
-  socket.onmessage = e => {
-    const d = JSON.parse(e.data);
-
-    if (d.type === "state") {
-      render(d.state);
-    }
-
-    if (d.type === "error") {
-      msg(d.message || "Something went wrong.");
-    }
-  };
-
-  socket.onclose = () => {
-    if (code) {
-      setTimeout(connect, 1800);
-    }
-  };
-}
-
-function send(type, extra = {}) {
-  if (socket?.readyState === 1) {
-    socket.send(JSON.stringify({ type, ...extra }));
-  } else {
-    msg("Reconnecting. Please try again.");
+const shuffle = (items) => {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
   }
-}
+  return result;
+};
 
-function render(s) {
-  const inGame = s.status !== "lobby";
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
 
-  // Hide lobby information once the game starts.
-  $("roomCode").classList.toggle("hidden", inGame);
-  $("roomCode").previousElementSibling.classList.toggle("hidden", inGame);
-  $("players").classList.toggle("hidden", inGame);
-  $("players").previousElementSibling.classList.toggle("hidden", inGame);
+    if (url.pathname === "/api/rooms" && request.method === "POST") {
+      const body = await request.json();
+      const name = String(body.name || "Host").trim().slice(0, 18) || "Host";
 
-  $("status").textContent =
-    inGame
-      ? `Round ${s.round || 1}`
-      : "Waiting for players";
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      const id = env.GAME_ROOMS.idFromName(code);
+      const room = env.GAME_ROOMS.get(id);
+      const hostId = crypto.randomUUID();
 
-  $("players").innerHTML = s.players.map(p =>
-    `<li>${escapeHtml(p.name)} — ${p.score} points ${p.id === s.judgeId ? "👑 Judge" : ""} ${p.online ? "" : "(offline)"}</li>`
-  ).join("");
-
-  const start = $("start");
-
-  start.classList.toggle("hidden", !isHost || s.status !== "lobby");
-  start.disabled = s.players.length < 3;
-  start.textContent = s.players.length < 3
-    ? `Waiting for players (${s.players.length}/3)`
-    : "Start game";
-
-  const area = $("gameArea");
-  area.innerHTML = "";
-
-  if (s.status === "lobby") {
-    area.innerHTML =
-      "<p>Waiting for everyone to join. You need at least 3 players.</p>";
-    return;
-  }
-
-  if (s.status === "finished") {
-    const winner = [...s.players].sort((a, b) => b.score - a.score)[0];
-
-    area.innerHTML = `
-      <h2>🏆 Game over!</h2>
-      <h3>${escapeHtml(winner?.name || "Winner")} wins!</h3>
-      <p>They reached 5 points!</p>
-      <h3>Final scores</h3>
-      <ul>
-        ${[...s.players].sort((a, b) => b.score - a.score)
-          .map(p => `<li>${escapeHtml(p.name)} — ${p.score} points</li>`)
-          .join("")}
-      </ul>
-    `;
-
-    return;
-  }
-
-  const question = document.createElement("h2");
-  question.className = "question";
-  question.textContent = s.question || "";
-  area.append(question);
-
-  const isJudge = playerId === s.judgeId;
-  const hand = Array.isArray(s.hand) ? s.hand : [];
-
-  if (s.status === "playing" && !s.revealed) {
-    if (isJudge) {
-      const waiting = document.createElement("p");
-      waiting.textContent =
-        "You're judging this round. Waiting for the other players...";
-      area.append(waiting);
-    } else if (hand.length < 10) {
-      const waiting = document.createElement("p");
-      waiting.textContent =
-        "Your card has been submitted. Waiting for the judge...";
-      area.append(waiting);
-    } else {
-      const heading = document.createElement("h3");
-      heading.textContent = "Choose one answer card";
-      area.append(heading);
-
-      const handArea = document.createElement("div");
-      handArea.className = "hand";
-
-      hand.forEach(card => {
-        const button = document.createElement("button");
-
-        button.type = "button";
-        button.className = "answer hand-card";
-        button.textContent = card.text;
-
-        button.onclick = () => {
-          handArea.querySelectorAll("button").forEach(b => {
-            b.disabled = true;
-          });
-
-          button.textContent = "Submitting...";
-          send("submit", { cardId: card.id });
-        };
-
-        handArea.append(button);
+      const init = await room.fetch("https://room/init", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code, hostId, name })
       });
 
-      area.append(handArea);
+      if (!init.ok) return json({ error: "Couldn't create room." }, 500);
+      return json({ code, playerId: hostId });
     }
-  }
 
-  if (s.status === "playing" && s.revealed) {
-    if (isJudge) {
-      const heading = document.createElement("h3");
-      heading.textContent = "Choose the funniest answer";
-      area.append(heading);
+    const match = url.pathname.match(
+      /^\/api\/rooms\/([A-Z0-9]{6})(?:\/(join|state|socket))?$/
+    );
 
-      s.submissions.forEach(answer => {
-        const button = document.createElement("button");
+    if (match) {
+      const [, code, action = "state"] = match;
+      const id = env.GAME_ROOMS.idFromName(code);
+      const room = env.GAME_ROOMS.get(id);
 
-        button.type = "button";
-        button.className = "answer";
-        button.textContent = answer.answer;
+      if (action === "join" && request.method === "POST") {
+        const playerId = crypto.randomUUID();
 
-        button.onclick = () => {
-          send("pick", { winnerId: answer.playerId });
-        };
+        const response = await room.fetch("https://room/join", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ...(await request.json()),
+            playerId
+          })
+        });
 
-        area.append(button);
-      });
-    } else {
-      const waiting = document.createElement("p");
-      waiting.textContent =
-        "All answers are in. The judge is choosing the winner...";
-      area.append(waiting);
+        const data = await response.json();
+        return json({ ...data, playerId }, response.status);
+      }
+
+      if (action === "socket") {
+        const target = new URL("https://room/ws");
+        target.search = url.search;
+        return room.fetch(new Request(target, request));
+      }
+
+      return room.fetch("https://room/state");
     }
-  }
 
-  if (s.status === "between") {
-    const winner = s.players.find(p => p.id === s.winnerId);
-
-    const result = document.createElement("div");
-
-    result.innerHTML = `
-      <h2>🎉 Round winner!</h2>
-      <h3>${escapeHtml(winner?.name || "A player")} gets 1 point!</h3>
-      <h3>Current scores</h3>
-      <ul>
-        ${[...s.players].sort((a, b) => b.score - a.score)
-          .map(p => `<li>${escapeHtml(p.name)} — ${p.score} points</li>`)
-          .join("")}
-      </ul>
-    `;
-
-    area.append(result);
-
-    const nextText = document.createElement("p");
-    nextText.textContent = "The next round is ready.";
-    area.append(nextText);
-
-    if (isHost) {
-      const button = document.createElement("button");
-
-      button.textContent = "Next round";
-      button.onclick = () => send("next");
-
-      area.append(button);
-    } else {
-      const waiting = document.createElement("p");
-      waiting.textContent =
-        "Waiting for the host to start the next round...";
-      area.append(waiting);
-    }
-  }
-}
-
-function escapeHtml(v) {
-  return String(v).replace(/[&<>"']/g, c => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  }[c]));
-}
-
-$("create").onclick = async () => {
-  try {
-    const name = $("name").value.trim() || "Host";
-    const d = await api("/api/rooms", { name });
-
-    code = d.code;
-    playerId = d.playerId;
-    isHost = true;
-
-    showRoom();
-    connect();
-    msg("");
-  } catch (e) {
-    msg(e.message);
+    return env.ASSETS.fetch(request);
   }
 };
 
-$("join").onclick = async () => {
-  try {
-    code = $("code").value.trim().toUpperCase();
-
-    const name = $("name").value.trim();
-
-    if (!name) throw Error("Enter your name first.");
-
-    const d = await api(`/api/rooms/${code}/join`, { name });
-
-    playerId = d.playerId;
-    isHost = false;
-
-    showRoom();
-    connect();
-    msg("");
-  } catch (e) {
-    msg(e.message);
+export class GameRoom {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+    this.state = null;
   }
-};
 
-$("start").onclick = () => send("start");
+  async load() {
+    if (!this.state) {
+      this.state = await this.ctx.storage.get("game") || null;
+    }
+    return this.state;
+  }
 
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  async save() {
+    await this.ctx.storage.put("game", this.state);
+  }
+
+  async loadDeck(path) {
+    const response = await this.env.ASSETS.fetch(
+      new Request(`https://assets/data/${path}`)
+    );
+
+    if (!response.ok) {
+      throw new Error(`Couldn't load ${path}.`);
+    }
+
+    const data = await response.json();
+
+    if (!Array.isArray(data.cards) || data.cards.length === 0) {
+      throw new Error(`${path} contains no cards.`);
+    }
+
+    return data.cards;
+  }
+
+  async prepareDecks() {
+    const s = this.state;
+
+    if (s.questionDeck && s.answerDeck) return;
+
+    const [questions, answers] = await Promise.all([
+      this.loadDeck("questions.json"),
+      this.loadDeck("answers.json")
+    ]);
+
+    s.questionDeck = shuffle(questions);
+    s.usedQuestions = [];
+    s.answerDeck = shuffle(answers);
+    s.answerDiscard = [];
+  }
+
+  drawQuestion() {
+    const s = this.state;
+
+    if (s.questionDeck.length === 0) {
+      s.questionDeck = shuffle(s.usedQuestions);
+      s.usedQuestions = [];
+    }
+
+    const card = s.questionDeck.shift();
+
+    if (!card) throw new Error("No question cards available.");
+
+    s.usedQuestions.push(card);
+    return card.text;
+  }
+
+  drawAnswer() {
+    const s = this.state;
+
+    if (s.answerDeck.length === 0 && s.answerDiscard.length > 0) {
+      s.answerDeck = shuffle(s.answerDiscard);
+      s.answerDiscard = [];
+    }
+
+    if (s.answerDeck.length === 0) {
+      throw new Error("No answer cards available.");
+    }
+
+    return s.answerDeck.shift();
+  }
+
+  dealHands() {
+    for (const player of this.state.players) {
+      while (player.hand.length < 10) {
+        player.hand.push(this.drawAnswer());
+      }
+    }
+  }
+
+  publicState(playerId = null) {
+    const s = this.state;
+    if (!s) return null;
+
+    return {
+      code: s.code,
+      status: s.status,
+      round: s.round,
+      judgeId: s.judgeId,
+      targetScore: s.targetScore,
+
+      players: s.players.map(({ id, name, score, online }) => ({
+        id,
+        name,
+        score,
+        online
+      })),
+
+      question: s.question,
+
+      // Submission identities are replaced with anonymous tokens.
+      submissions: s.revealed
+        ? s.submissions.map(x => ({
+            playerId: x.submissionId,
+            answer: x.answer
+          }))
+        : s.submissions.map(() => ({
+            answer: "Submitted"
+          })),
+
+      revealed: s.revealed,
+      winnerId: s.winnerId,
+
+      // Only the owner of a hand receives its cards.
+      hand: playerId
+        ? s.players.find(p => p.id === playerId)?.hand || []
+        : []
+    };
+  }
+
+  async broadcast() {
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        const attachment = ws.deserializeAttachment();
+        const playerId = attachment?.playerId || null;
+
+        ws.send(JSON.stringify({
+          type: "state",
+          state: this.publicState(playerId)
+        }));
+      } catch {}
+    }
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/init" && request.method === "POST") {
+      if (!this.state) {
+        const { code, hostId, name } = await request.json();
+
+        this.state = {
+          code,
+          hostId,
+          status: "lobby",
+          round: 0,
+          judgeIndex: 0,
+          judgeId: hostId,
+          targetScore: 5,
+
+          players: [{
+            id: hostId,
+            name: name || "Host",
+            score: 0,
+            online: true,
+            hand: []
+          }],
+
+          question: null,
+          questionDeck: null,
+          usedQuestions: [],
+          answerDeck: null,
+          answerDiscard: [],
+          submissions: [],
+          revealed: false,
+          winnerId: null
+        };
+
+        await this.save();
+      }
+
+      return json({ ok: true });
+    }
+
+    await this.load();
+
+    if (!this.state) {
+      return json({ error: "Room not found." }, 404);
+    }
+
+    if (url.pathname === "/join" && request.method === "POST") {
+      const body = await request.json();
+      const name = String(body.name || "").trim().slice(0, 18);
+
+      if (!name) return json({ error: "Enter a name." }, 400);
+
+      if (this.state.status !== "lobby") {
+        return json({ error: "Game already started." }, 409);
+      }
+
+      if (this.state.players.length >= 10) {
+        return json({ error: "Room is full." }, 409);
+      }
+
+      this.state.players.push({
+        id: body.playerId,
+        name,
+        score: 0,
+        online: true,
+        hand: []
+      });
+
+      await this.save();
+      await this.broadcast();
+
+      return json({ ok: true });
+    }
+
+    if (url.pathname === "/state") {
+      return json(this.publicState());
+    }
+
+    if (url.pathname === "/ws") {
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+
+      const playerId = url.searchParams.get("playerId");
+      const player = this.state.players.find(p => p.id === playerId);
+
+      if (!player) {
+        return json({ error: "Player not found." }, 404);
+      }
+
+      this.ctx.acceptWebSocket(server);
+      server.serializeAttachment({ playerId });
+
+      player.online = true;
+      await this.save();
+
+      server.send(JSON.stringify({
+        type: "state",
+        state: this.publicState(playerId)
+      }));
+
+      await this.broadcast();
+
+      return new Response(null, {
+        status: 101,
+        webSocket: client
+      });
+    }
+
+    return json({ error: "Not found." }, 404);
+  }
+
+  async webSocketMessage(ws, message) {
+    let data;
+
+    try {
+      data = JSON.parse(message);
+    } catch {
+      return;
+    }
+
+    const s = await this.load();
+    if (!s) return;
+
+    // The player identity comes from the socket, not the message.
+    const attachment = ws.deserializeAttachment();
+    const playerId = attachment?.playerId;
+
+    const player = s.players.find(p => p.id === playerId);
+    if (!player) return;
+
+    if (
+      data.type === "start" &&
+      playerId === s.hostId &&
+      s.status === "lobby" &&
+      s.players.length >= 3
+    ) {
+      try {
+        await this.prepareDecks();
+
+        for (const p of s.players) {
+          p.hand = [];
+        }
+
+        this.dealHands();
+
+        s.status = "playing";
+        s.round = 1;
+        s.judgeIndex = 0;
+        s.judgeId = s.players[0].id;
+        s.question = this.drawQuestion();
+        s.submissions = [];
+        s.revealed = false;
+        s.winnerId = null;
+      } catch (error) {
+        ws.send(JSON.stringify({
+          type: "error",
+          message: error.message
+        }));
+        return;
+      }
+
+    } else if (
+      data.type === "submit" &&
+      s.status === "playing" &&
+      playerId !== s.judgeId &&
+      !s.revealed
+    ) {
+      // New card-based submission.
+      let answer = "";
+      let cardId = null;
+
+      if (data.cardId) {
+        const index = player.hand.findIndex(
+          card => card.id === data.cardId
+        );
+
+        if (index === -1) return;
+
+        // Prevent a player from submitting more than one card.
+        if (s.submissions.some(x => x.playerId === playerId)) return;
+
+        const card = player.hand.splice(index, 1)[0];
+        answer = card.text;
+        cardId = card.id;
+
+        s.answerDiscard.push(card);
+      } else {
+        // Temporary compatibility with the old typed-answer screen.
+        answer = String(data.answer || "").trim().slice(0, 100);
+      }
+
+      if (
+        answer &&
+        !s.submissions.some(x => x.playerId === playerId)
+      ) {
+        s.submissions.push({
+          playerId,
+          submissionId: crypto.randomUUID(),
+          cardId,
+          answer
+        });
+      }
+
+      if (s.submissions.length === s.players.length - 1) {
+        s.revealed = true;
+      }
+
+    } else if (
+      data.type === "pick" &&
+      playerId === s.judgeId &&
+      s.status === "playing" &&
+      s.revealed
+    ) {
+      const chosen = s.submissions.find(
+        x => x.submissionId === data.winnerId
+      );
+
+      if (!chosen) return;
+
+      const winner = s.players.find(
+        p => p.id === chosen.playerId
+      );
+
+      if (winner) winner.score += 1;
+
+      s.winnerId = chosen.playerId;
+
+      // Finish immediately when a player reaches the target score.
+      if (winner && winner.score >= s.targetScore) {
+        s.status = "finished";
+      } else {
+        s.status = "between";
+
+        // Refill everyone's hand to ten cards for the next round.
+        this.dealHands();
+      }
+
+    } else if (
+      data.type === "next" &&
+      playerId === s.hostId &&
+      s.status === "between"
+    ) {
+      s.round += 1;
+      s.judgeIndex = (s.judgeIndex + 1) % s.players.length;
+      s.judgeId = s.players[s.judgeIndex].id;
+      s.question = this.drawQuestion();
+      s.submissions = [];
+      s.revealed = false;
+      s.winnerId = null;
+      s.status = "playing";
+    }
+
+    await this.save();
+    await this.broadcast();
+  }
+
+  async webSocketClose(ws) {
+    const attachment = ws.deserializeAttachment();
+    const playerId = attachment?.playerId;
+
+    const s = await this.load();
+    if (!s) return;
+
+    const player = s.players.find(p => p.id === playerId);
+
+    if (player) {
+      player.online = false;
+      await this.save();
+    }
+
+    await this.broadcast();
+  }
+
+  async webSocketError(ws) {
+    await this.webSocketClose(ws);
+  }
 }

@@ -1,6 +1,7 @@
 
 
 
+
 const $ = id => document.getElementById(id);
 
 let code = "";
@@ -353,7 +354,7 @@ function setupScoreBar() {
       margin-top: 4px;
     }
 
-    /* CHAT INPUT FIX */
+    /* CHAT INPUT */
 
     #chatForm {
       flex: 0 0 auto;
@@ -536,6 +537,21 @@ function setupChatUI() {
   dock.append(button, window);
   document.body.append(dock);
 
+  // Close chat when tapping anywhere outside the chat window and button.
+  document.addEventListener("pointerdown", event => {
+    if (!chatOpen) return;
+
+    if (
+      window.contains(event.target) ||
+      button.contains(event.target)
+    ) {
+      return;
+    }
+
+    chatOpen = false;
+    window.classList.add("hidden");
+  });
+
   chatReady = true;
 }
 
@@ -694,7 +710,7 @@ function render(s) {
   mergeChatMessages(s.chat);
   updateChatButton();
 
-  // Recognise the lobby from either the view or the server status.
+  // Recognise the lobby from either the view or server status.
   const inLobbyView = s.view === "lobby" || s.status === "lobby";
   const inGame = !inLobbyView;
 

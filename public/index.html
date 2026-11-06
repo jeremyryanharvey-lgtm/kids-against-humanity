@@ -1,26 +1,46 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#18213a"><link rel="manifest" href="/manifest.webmanifest">
-  <link rel="stylesheet" href="/style.css"><title>Kids Against Maturity</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#18213a">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+  <title>Kids Against Maturity</title>
 </head>
 <body>
   <main class="wrap">
-    <header><div class="logo">KAM</div><div><h1>Kids Against Maturity</h1><p>A silly, family-friendly card game</p></div></header>
+    <header id="siteHeader">
+      <div class="logo">KAM</div>
+      <div>
+        <h1>Kids Against Maturity</h1>
+        <p>A silly, family-friendly card game</p>
+      </div>
+    </header>
+
     <section id="home" class="panel">
-      <h2>Let's play!</h2><label>Your name<input id="name" maxlength="18" placeholder="Enter your name"></label>
+      <h2>Let's play!</h2>
+      <label>Your name
+        <input id="name" maxlength="18" placeholder="Enter your name">
+      </label>
       <button id="create">Create a game</button>
       <div class="split"><span>or join a game</span></div>
-      <label>Room code<input id="code" maxlength="6" autocapitalize="characters" placeholder="6-letter code"></label>
+      <label>Room code
+        <input id="code" maxlength="6" autocapitalize="characters" placeholder="6-letter code">
+      </label>
       <button id="join" class="secondary">Join game</button>
     </section>
+
     <section id="room" class="panel hidden">
-      <p class="eyebrow">ROOM CODE</p><div id="roomCode" class="roomcode"></div><p id="status"></p>
-      <h2>Players</h2><ul id="players"></ul>
+      <p class="eyebrow">ROOM CODE</p>
+      <div id="roomCode" class="roomcode"></div>
+      <p id="status"></p>
+      <h2>Players</h2>
+      <ul id="players"></ul>
       <div id="gameArea"></div>
       <button id="start">Start game (3+ players)</button>
     </section>
+
     <p id="message" role="status"></p>
   </main>
   <script src="/app.js"></script>

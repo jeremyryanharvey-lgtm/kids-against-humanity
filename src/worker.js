@@ -1,4 +1,5 @@
 
+
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -7,10 +8,12 @@ const json = (data, status = 200) =>
 
 const shuffle = items => {
   const result = [...items];
+
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [result[i], result[j]] = [result[j], result[i]];
   }
+
   return result;
 };
 
@@ -34,6 +37,7 @@ export default {
       });
 
       if (!init.ok) return json({ error: "Couldn't create room." }, 500);
+
       return json({ code, playerId: hostId });
     }
 
@@ -59,12 +63,17 @@ export default {
         });
 
         const data = await response.json();
-        return json({ ...data, playerId }, response.status);
+
+        return json(
+          { ...data, playerId },
+          response.status
+        );
       }
 
       if (action === "socket") {
         const target = new URL("https://room/ws");
         target.search = url.search;
+
         return room.fetch(new Request(target, request));
       }
 
@@ -86,11 +95,14 @@ export class GameRoom {
     if (!this.state) {
       this.state = await this.ctx.storage.get("game") || null;
     }
+
     return this.state;
   }
 
   async save() {
-    await this.ctx.storage.put("game", this.state);
+    if (this.state) {
+      await this.ctx.storage.put("game", this.state);
+    }
   }
 
   async loadDeck(path) {
@@ -114,15 +126,11 @@ export class GameRoom {
   async prepareDecks() {
     const s = this.state;
 
-    if (s.questionDeck && s.answerDeck) return;
-
     const [questions, answers] = await Promise.all([
       this.loadDeck("questions.json"),
       this.loadDeck("answers.json")
     ]);
 
-    // Remove duplicate answer IDs and duplicate answer text.
-    // This prevents identical cards being dealt as separate cards.
     const uniqueAnswers = [];
     const seenIds = new Set();
     const seenTexts = new Set();
@@ -134,17 +142,18 @@ export class GameRoom {
       const text = String(card.text).trim();
       const normalisedText = text.toLowerCase().replace(/\s+/g, " ");
 
-      if (!text || seenIds.has(id) || seenTexts.has(normalisedText)) {
+      if (
+        !text ||
+        seenIds.has(id) ||
+        seenTexts.has(normalisedText)
+      ) {
         continue;
       }
 
       seenIds.add(id);
       seenTexts.add(normalisedText);
 
-      uniqueAnswers.push({
-        id,
-        text
-      });
+      uniqueAnswers.push({ id, text });
     }
 
     if (uniqueAnswers.length < 10 * s.players.length) {
@@ -162,16 +171,19 @@ export class GameRoom {
   drawQuestion() {
     const s = this.state;
 
-    if (s.questionDeck.length === 0) {
-      s.questionDeck = shuffle(s.usedQuestions);
+    if (!s.questionDeck || s.questionDeck.length === 0) {
+      s.questionDeck = shuffle(s.usedQuestions || []);
       s.usedQuestions = [];
     }
 
     const card = s.questionDeck.shift();
 
-    if (!card) throw new Error("No question cards available.");
+    if (!card) {
+      throw new Error("No question cards available.");
+    }
 
     s.usedQuestions.push(card);
+
     return card.text;
   }
 
@@ -200,16 +212,33 @@ export class GameRoom {
 
   publicState(playerId = null) {
     const s = this.state;
+
     if (!s) return null;
+
+    const viewer = playerId
+      ? s.players.find(p => p.id === playerId)
+      : null;
+
+    const view = !viewer
+      ? "removed"
+      : s.status === "finished" && viewer.inLobby
+        ? "lobby"
+        : "game";
+
+    const visiblePlayers = view === "lobby"
+      ? s.players.filter(p => p.inLobby)
+      : s.players;
 
     return {
       code: s.code,
       status: s.status,
+      view,
+      isHost: playerId === s.hostId,
       round: s.round,
       judgeId: s.judgeId,
       targetScore: s.targetScore,
 
-      players: s.players.map(({ id, name, score, online }) => ({
+      players: visiblePlayers.map(({ id, name, score, online }) => ({
         id,
         name,
         score,
@@ -230,16 +259,36 @@ export class GameRoom {
       revealed: s.revealed,
       winnerId: s.winnerId,
 
-      // Explicit submission status for this player.
       hasSubmitted: playerId
         ? s.submissions.some(x => x.playerId === playerId)
         : false,
 
-      // Only the owner of a hand receives its cards.
       hand: playerId
-        ? s.players.find(p => p.id === playerId)?.hand || []
+        ? viewer?.hand || []
         : []
     };
+  }
+
+  async notifyHost(message) {
+    if (!this.state) return;
+
+    const hostId = this.state.hostId;
+
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        const attachment = ws.deserializeAttachment();
+
+        if (attachment?.playerId === hostId) {
+          // The existing app.js displays this message in its message area.
+          ws.send(JSON.stringify({
+            type: "error",
+            message
+          }));
+
+          return;
+        }
+      } catch {}
+    }
   }
 
   async broadcast() {
@@ -248,12 +297,41 @@ export class GameRoom {
         const attachment = ws.deserializeAttachment();
         const playerId = attachment?.playerId || null;
 
+        const playerExists = this.state?.players.some(
+          p => p.id === playerId
+        );
+
+        if (!playerExists) {
+          ws.send(JSON.stringify({
+            type: "removed",
+            message: "The room has moved on without you."
+          }));
+
+          continue;
+        }
+
         ws.send(JSON.stringify({
           type: "state",
           state: this.publicState(playerId)
         }));
       } catch {}
     }
+  }
+
+  async closeRoom() {
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(JSON.stringify({
+          type: "closed",
+          message: "Everyone has left. This room is now closed."
+        }));
+
+        ws.close(1000, "Room closed");
+      } catch {}
+    }
+
+    this.state = null;
+    await this.ctx.storage.deleteAll();
   }
 
   async fetch(request) {
@@ -277,7 +355,8 @@ export class GameRoom {
             name: name || "Host",
             score: 0,
             online: true,
-            hand: []
+            hand: [],
+            inLobby: true
           }],
 
           question: null,
@@ -306,10 +385,14 @@ export class GameRoom {
       const body = await request.json();
       const name = String(body.name || "").trim().slice(0, 18);
 
-      if (!name) return json({ error: "Enter a name." }, 400);
+      if (!name) {
+        return json({ error: "Enter a name." }, 400);
+      }
 
-      if (this.state.status !== "lobby") {
-        return json({ error: "Game already started." }, 409);
+      if (!["lobby", "finished"].includes(this.state.status)) {
+        return json({
+          error: "A game is in progress. Please try again after it finishes."
+        }, 409);
       }
 
       if (this.state.players.length >= 10) {
@@ -321,7 +404,8 @@ export class GameRoom {
         name,
         score: 0,
         online: true,
-        hand: []
+        hand: [],
+        inLobby: true
       });
 
       await this.save();
@@ -377,25 +461,159 @@ export class GameRoom {
     }
 
     const s = await this.load();
+
     if (!s) return;
 
     const attachment = ws.deserializeAttachment();
     const playerId = attachment?.playerId;
-
     const player = s.players.find(p => p.id === playerId);
+
     if (!player) return;
 
+    // Player chooses to leave the room.
+    if (data.type === "quit") {
+      const leavingIndex = s.players.findIndex(p => p.id === playerId);
+      const wasHost = playerId === s.hostId;
+      const wasJudge = playerId === s.judgeId;
+      const leavingName = player.name;
+
+      s.players.splice(leavingIndex, 1);
+
+      s.submissions = s.submissions.filter(
+        x => x.playerId !== playerId
+      );
+
+      if (s.players.length === 0) {
+        await this.closeRoom();
+        return;
+      }
+
+      if (wasHost) {
+        // The earliest remaining player becomes the new host.
+        s.hostId = s.players[0].id;
+      }
+
+      if (wasJudge && ["playing", "between"].includes(s.status)) {
+        const nextIndex = leavingIndex % s.players.length;
+
+        s.judgeIndex = nextIndex;
+        s.judgeId = s.players[nextIndex].id;
+
+        s.submissions = s.submissions.filter(
+          x => x.playerId !== s.judgeId
+        );
+      } else {
+        s.judgeIndex = Math.max(
+          0,
+          s.players.findIndex(p => p.id === s.judgeId)
+        );
+      }
+
+      if (s.status === "playing") {
+        s.revealed = s.submissions.length >= s.players.length - 1;
+      }
+
+      if (
+        s.players.length < 2 &&
+        ["playing", "between"].includes(s.status)
+      ) {
+        s.status = "lobby";
+        s.round = 0;
+        s.question = null;
+        s.submissions = [];
+        s.revealed = false;
+        s.winnerId = null;
+
+        for (const p of s.players) {
+          p.inLobby = true;
+          p.hand = [];
+        }
+      }
+
+      await this.save();
+      await this.broadcast();
+
+      // Notify the new host if the host left.
+      if (wasHost) {
+        const newHost = s.players[0];
+
+        await this.notifyHost(
+          `${leavingName} has left the room. You are now the host.`
+        );
+      } else {
+        // Otherwise notify the existing host.
+        await this.notifyHost(
+          `${leavingName} has left the room.`
+        );
+      }
+
+      try {
+        ws.send(JSON.stringify({
+          type: "removed",
+          message: "You left the room."
+        }));
+
+        ws.close(1000, "Player left");
+      } catch {}
+
+      return;
+    }
+
+    // Player returns to the lobby after a finished game.
     if (
+      data.type === "playAgain" &&
+      s.status === "finished"
+    ) {
+      player.inLobby = true;
+      player.hand = [];
+    }
+
+    // Host starts a fresh game with the players currently in the lobby.
+    else if (
       data.type === "start" &&
       playerId === s.hostId &&
-      s.status === "lobby" &&
-      s.players.length >= 3
+      (s.status === "lobby" || s.status === "finished") &&
+      player.inLobby
     ) {
+      const lobbyPlayers = s.players.filter(p => p.inLobby);
+
+      if (lobbyPlayers.length < 3) {
+        ws.send(JSON.stringify({
+          type: "error",
+          message: "You need at least 3 players to start."
+        }));
+
+        return;
+      }
+
+      const previousPlayers = s.players;
+      s.players = lobbyPlayers;
+
+      // Notify players who stayed on the previous winner screen.
+      for (const oldPlayer of previousPlayers) {
+        if (!lobbyPlayers.some(p => p.id === oldPlayer.id)) {
+          for (const otherWs of this.ctx.getWebSockets()) {
+            try {
+              const otherId = otherWs.deserializeAttachment()?.playerId;
+
+              if (otherId === oldPlayer.id) {
+                otherWs.send(JSON.stringify({
+                  type: "removed",
+                  message: "A new game has started without you."
+                }));
+              }
+            } catch {}
+          }
+        }
+      }
+
       try {
         await this.prepareDecks();
 
         for (const p of s.players) {
           p.hand = [];
+          p.score = 0;
+          p.inLobby = false;
         }
 
         this.dealHands();
@@ -410,24 +628,35 @@ export class GameRoom {
         s.winnerId = null;
 
       } catch (error) {
+        s.players = previousPlayers;
+
+        for (const p of s.players) {
+          p.inLobby = true;
+        }
+
+        await this.save();
+
         ws.send(JSON.stringify({
           type: "error",
           message: error.message
         }));
+
         return;
       }
+    }
 
-    } else if (
+    // Player submits one answer card.
+    else if (
       data.type === "submit" &&
       s.status === "playing" &&
       playerId !== s.judgeId &&
       !s.revealed
     ) {
-      // Only allow a real card from this player's hand.
       if (!data.cardId) return;
 
-      // Prevent multiple submissions.
-      if (s.submissions.some(x => x.playerId === playerId)) return;
+      if (s.submissions.some(x => x.playerId === playerId)) {
+        return;
+      }
 
       const index = player.hand.findIndex(
         card => card.id === data.cardId
@@ -449,8 +678,10 @@ export class GameRoom {
       if (s.submissions.length === s.players.length - 1) {
         s.revealed = true;
       }
+    }
 
-    } else if (
+    // Judge selects the winning answer.
+    else if (
       data.type === "pick" &&
       playerId === s.judgeId &&
       s.status === "playing" &&
@@ -466,18 +697,26 @@ export class GameRoom {
         p => p.id === chosen.playerId
       );
 
-      if (winner) winner.score += 1;
+      if (winner) {
+        winner.score += 1;
+      }
 
       s.winnerId = chosen.playerId;
 
       if (winner && winner.score >= s.targetScore) {
         s.status = "finished";
+
+        for (const p of s.players) {
+          p.inLobby = false;
+        }
       } else {
         s.status = "between";
         this.dealHands();
       }
+    }
 
-    } else if (
+    // Host advances to the next round.
+    else if (
       data.type === "next" &&
       playerId === s.hostId &&
       s.status === "between"
@@ -501,6 +740,7 @@ export class GameRoom {
     const playerId = attachment?.playerId;
 
     const s = await this.load();
+
     if (!s) return;
 
     const player = s.players.find(p => p.id === playerId);

@@ -197,14 +197,24 @@ function render(s) {
   if (s.status === "between") {
     const winner = s.players.find(p => p.id === s.winnerId);
 
-    const result = document.createElement("h3");
-    result.textContent =
-      `🏆 Round winner: ${winner?.name || "Player"}!`;
+    const result = document.createElement("div");
+
+    result.innerHTML = `
+      <h2>🎉 Round winner!</h2>
+      <h3>${escapeHtml(winner?.name || "A player")} gets 1 point!</h3>
+      <h3>Current scores</h3>
+      <ul>
+        ${[...s.players].sort((a, b) => b.score - a.score)
+          .map(p => `<li>${escapeHtml(p.name)} — ${p.score} points</li>`)
+          .join("")}
+      </ul>
+    `;
+
     area.append(result);
 
-    const score = document.createElement("p");
-    score.textContent = "The next round is ready.";
-    area.append(score);
+    const nextText = document.createElement("p");
+    nextText.textContent = "The next round is ready.";
+    area.append(nextText);
 
     if (isHost) {
       const button = document.createElement("button");

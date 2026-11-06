@@ -65,8 +65,18 @@ function send(type, extra = {}) {
 }
 
 function render(s) {
+  const inGame = s.status !== "lobby";
+
+  // Hide lobby information once the game starts.
+  $("roomCode").classList.toggle("hidden", inGame);
+  $("roomCode").previousElementSibling.classList.toggle("hidden", inGame);
+  $("players").classList.toggle("hidden", inGame);
+  $("players").previousElementSibling.classList.toggle("hidden", inGame);
+
   $("status").textContent =
-    `Round ${s.round || 0} · ${s.status}`;
+    inGame
+      ? `Round ${s.round || 1}`
+      : "Waiting for players";
 
   $("players").innerHTML = s.players.map(p =>
     `<li>${escapeHtml(p.name)} — ${p.score} points ${p.id === s.judgeId ? "👑 Judge" : ""} ${p.online ? "" : "(offline)"}</li>`
@@ -93,9 +103,15 @@ function render(s) {
     const winner = [...s.players].sort((a, b) => b.score - a.score)[0];
 
     area.innerHTML = `
-      <h2>Game over!</h2>
-      <h3>🏆 ${escapeHtml(winner?.name || "Winner")} wins!</h3>
-      <p>Final score: ${winner?.score || 0} points</p>
+      <h2>🏆 Game over!</h2>
+      <h3>${escapeHtml(winner?.name || "Winner")} wins!</h3>
+      <p>They reached 5 points!</p>
+      <h3>Final scores</h3>
+      <ul>
+        ${[...s.players].sort((a, b) => b.score - a.score)
+          .map(p => `<li>${escapeHtml(p.name)} — ${p.score} points</li>`)
+          .join("")}
+      </ul>
     `;
 
     return;
@@ -107,25 +123,28 @@ function render(s) {
   area.append(question);
 
   const isJudge = playerId === s.judgeId;
+  const hand = Array.isArray(s.hand) ? s.hand : [];
 
   if (s.status === "playing" && !s.revealed) {
     if (isJudge) {
       const waiting = document.createElement("p");
-      waiting.textContent = "You're judging this round. Waiting for the other players...";
+      waiting.textContent =
+        "You're judging this round. Waiting for the other players...";
       area.append(waiting);
-    } else if (s.hand.length < 10) {
+    } else if (hand.length < 10) {
       const waiting = document.createElement("p");
-      waiting.textContent = "Your card has been submitted. Waiting for the judge...";
+      waiting.textContent =
+        "Your card has been submitted. Waiting for the judge...";
       area.append(waiting);
     } else {
       const heading = document.createElement("h3");
       heading.textContent = "Choose one answer card";
       area.append(heading);
 
-      const hand = document.createElement("div");
-      hand.className = "hand";
+      const handArea = document.createElement("div");
+      handArea.className = "hand";
 
-      s.hand.forEach(card => {
+      hand.forEach(card => {
         const button = document.createElement("button");
 
         button.type = "button";
@@ -133,7 +152,7 @@ function render(s) {
         button.textContent = card.text;
 
         button.onclick = () => {
-          hand.querySelectorAll("button").forEach(b => {
+          handArea.querySelectorAll("button").forEach(b => {
             b.disabled = true;
           });
 
@@ -141,10 +160,10 @@ function render(s) {
           send("submit", { cardId: card.id });
         };
 
-        hand.append(button);
+        handArea.append(button);
       });
 
-      area.append(hand);
+      area.append(handArea);
     }
   }
 
@@ -169,7 +188,8 @@ function render(s) {
       });
     } else {
       const waiting = document.createElement("p");
-      waiting.textContent = "All answers are in. The judge is choosing the winner...";
+      waiting.textContent =
+        "All answers are in. The judge is choosing the winner...";
       area.append(waiting);
     }
   }
@@ -178,7 +198,8 @@ function render(s) {
     const winner = s.players.find(p => p.id === s.winnerId);
 
     const result = document.createElement("h3");
-    result.textContent = `🏆 Round winner: ${winner?.name || "Player"}!`;
+    result.textContent =
+      `🏆 Round winner: ${winner?.name || "Player"}!`;
     area.append(result);
 
     const score = document.createElement("p");
@@ -194,7 +215,8 @@ function render(s) {
       area.append(button);
     } else {
       const waiting = document.createElement("p");
-      waiting.textContent = "Waiting for the host to start the next round...";
+      waiting.textContent =
+        "Waiting for the host to start the next round...";
       area.append(waiting);
     }
   }

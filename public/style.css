@@ -1,3 +1,4 @@
+
 :root {
   font-family: system-ui, -apple-system, sans-serif;
   color: #18213a;
@@ -207,17 +208,21 @@ li {
   }
 }
 
-/* CHAT BUTTON */
+/* CHAT DOCK
+   Keep the dock unpositioned so its fixed children
+   are positioned against the screen, not the dock. */
 
 #chatDock {
-  position: fixed;
-  inset: 0;
-  z-index: 99999;
+  position: static !important;
+  inset: auto !important;
+  z-index: auto !important;
   pointer-events: none;
 }
 
+/* CHAT BUTTON */
+
 #chatButton {
-  position: fixed;
+  position: fixed !important;
   pointer-events: auto;
   right: 16px;
   bottom: calc(125px + env(safe-area-inset-bottom));
@@ -251,16 +256,18 @@ li {
   }
 }
 
-/* COMPACT CHAT WINDOW AT BOTTOM */
+/* CHAT WINDOW */
 
 #chatWindow {
   position: fixed !important;
+
   left: 12px !important;
   right: 12px !important;
-  bottom: calc(12px + env(safe-area-inset-bottom)) !important;
+  bottom: max(12px, env(safe-area-inset-bottom)) !important;
 
   width: auto !important;
   max-width: 500px !important;
+
   height: 420px !important;
   max-height: calc(100vh - 40px) !important;
 
@@ -277,6 +284,14 @@ li {
   z-index: 100002 !important;
   pointer-events: auto;
   overflow: hidden;
+}
+
+/* Use the dynamic viewport height on modern iPhones */
+
+@supports (height: 100dvh) {
+  #chatWindow {
+    max-height: calc(100dvh - 40px) !important;
+  }
 }
 
 /* HEADER */
@@ -352,23 +367,19 @@ li {
 
   background: #f0f2f8;
   color: #18213a;
-
   overflow-wrap: anywhere;
 }
 
 .chat-message.mine {
   align-self: flex-end;
-
   background: #4359d8;
   color: white;
-
   border-radius: 15px 15px 4px 15px;
 }
 
 .chat-message-name {
   display: block;
   margin-bottom: 4px;
-
   font-size: 12px;
   font-weight: 900;
   color: #4359d8;
@@ -387,7 +398,6 @@ li {
 .chat-message-time {
   display: block;
   margin-top: 5px;
-
   font-size: 10px;
   opacity: 0.65;
   text-align: right;
@@ -425,7 +435,6 @@ li {
   font: inherit;
   font-size: 16px;
   line-height: 1.35;
-
   resize: none;
 }
 
@@ -446,6 +455,8 @@ li {
   font-size: 12px;
   font-weight: 900;
 }
+
+/* SMALL PHONES */
 
 @media (max-width: 360px) {
   #chatWindow {

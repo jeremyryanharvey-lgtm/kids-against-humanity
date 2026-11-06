@@ -1,5 +1,4 @@
 
-
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -16,6 +15,40 @@ const shuffle = items => {
 
   return result;
 };
+
+// Basic family-friendly profanity filter.
+const PROFANITY = [
+  "asshole",
+  "bastard",
+  "bitch",
+  "bullshit",
+  "cock",
+  "crap",
+  "cunt",
+  "damn",
+  "dick",
+  "fuck",
+  "motherfucker",
+  "piss",
+  "shit",
+  "slut",
+  "whore"
+];
+
+function filterProfanity(text) {
+  let filtered = String(text);
+
+  for (const word of PROFANITY) {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`\\b${escaped}\\b`, "gi");
+
+    filtered = filtered.replace(regex, match =>
+      "*".repeat(match.length)
+    );
+  }
+
+  return filtered;
+}
 
 export default {
   async fetch(request, env) {
@@ -265,7 +298,10 @@ export class GameRoom {
 
       hand: playerId
         ? viewer?.hand || []
-        : []
+        : [],
+
+      // Chat history is visible to everyone in the room.
+      chat: s.chat || []
     };
   }
 
@@ -279,7 +315,6 @@ export class GameRoom {
         const attachment = ws.deserializeAttachment();
 
         if (attachment?.playerId === hostId) {
-          // The existing app.js displays this message in its message area.
           ws.send(JSON.stringify({
             type: "error",
             message
@@ -314,6 +349,21 @@ export class GameRoom {
           type: "state",
           state: this.publicState(playerId)
         }));
+      } catch {}
+    }
+  }
+
+  async broadcastChat(message) {
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        const playerId = ws.deserializeAttachment()?.playerId;
+
+        if (this.state.players.some(p => p.id === playerId)) {
+          ws.send(JSON.stringify({
+            type: "chat",
+            message
+          }));
+        }
       } catch {}
     }
   }
@@ -366,7 +416,10 @@ export class GameRoom {
           answerDiscard: [],
           submissions: [],
           revealed: false,
-          winnerId: null
+          winnerId: null,
+
+          // Shared chat history for this room.
+          chat: []
         };
 
         await this.save();
@@ -470,6 +523,48 @@ export class GameRoom {
 
     if (!player) return;
 
+    // CHAT: send a filtered message to everyone in the room.
+    if (data.type === "chat") {
+      const originalText = String(data.text || "").trim();
+
+      if (!originalText) return;
+
+      if (originalText.length > 300) {
+        ws.send(JSON.stringify({
+          type: "error",
+          message: "Chat messages must be 300 characters or fewer."
+        }));
+
+        return;
+      }
+
+      const filteredText = filterProfanity(originalText);
+
+      const chatMessage = {
+        id: crypto.randomUUID(),
+        playerId,
+        name: player.name,
+        text: filteredText,
+        time: Date.now()
+      };
+
+      if (!Array.isArray(s.chat)) {
+        s.chat = [];
+      }
+
+      s.chat.push(chatMessage);
+
+      // Keep only the latest 100 messages.
+      if (s.chat.length > 100) {
+        s.chat = s.chat.slice(-100);
+      }
+
+      await this.save();
+      await this.broadcastChat(chatMessage);
+
+      return;
+    }
+
     // Player chooses to leave the room.
     if (data.type === "quit") {
       const leavingIndex = s.players.findIndex(p => p.id === playerId);
@@ -489,7 +584,6 @@ export class GameRoom {
       }
 
       if (wasHost) {
-        // The earliest remaining player becomes the new host.
         s.hostId = s.players[0].id;
       }
 
@@ -533,15 +627,11 @@ export class GameRoom {
       await this.save();
       await this.broadcast();
 
-      // Notify the new host if the host left.
       if (wasHost) {
-        const newHost = s.players[0];
-
         await this.notifyHost(
           `${leavingName} has left the room. You are now the host.`
         );
       } else {
-        // Otherwise notify the existing host.
         await this.notifyHost(
           `${leavingName} has left the room.`
         );
@@ -589,7 +679,6 @@ export class GameRoom {
       const previousPlayers = s.players;
       s.players = lobbyPlayers;
 
-      // Notify players who stayed on the previous winner screen.
       for (const oldPlayer of previousPlayers) {
         if (!lobbyPlayers.some(p => p.id === oldPlayer.id)) {
           for (const otherWs of this.ctx.getWebSockets()) {
@@ -629,10 +718,6 @@ export class GameRoom {
 
       } catch (error) {
         s.players = previousPlayers;
-
-        for (const p of s.players) {
-          p.inLobby = true;
-        }
 
         await this.save();
 

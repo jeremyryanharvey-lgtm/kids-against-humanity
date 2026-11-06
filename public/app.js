@@ -30,6 +30,27 @@ function showRoom() {
   $("roomCode").textContent = code;
 }
 
+function returnHome(message = "") {
+  code = "";
+  playerId = "";
+  isHost = false;
+
+  if (socket) {
+    socket.onclose = null;
+    socket.close();
+    socket = null;
+  }
+
+  $("room").classList.add("hidden");
+  $("home").classList.remove("hidden");
+  $("gameArea").innerHTML = "";
+  $("message").textContent = message;
+
+  if ($("scoreBar")) {
+    $("scoreBar").style.display = "none";
+  }
+}
+
 function connect() {
   const scheme = location.protocol === "https:" ? "wss" : "ws";
 
@@ -47,11 +68,21 @@ function connect() {
     if (d.type === "error") {
       msg(d.message || "Something went wrong.");
     }
+
+    if (d.type === "removed") {
+      returnHome(d.message || "You are no longer in this room.");
+    }
+
+    if (d.type === "closed") {
+      returnHome(d.message || "This room has closed.");
+    }
   };
 
   socket.onclose = () => {
     if (code) {
-      setTimeout(connect, 1800);
+      setTimeout(() => {
+        if (code && playerId) connect();
+      }, 1800);
     }
   };
 }
@@ -62,6 +93,35 @@ function send(type, extra = {}) {
   } else {
     msg("Reconnecting. Please try again.");
   }
+}
+
+function addActionButton(parent, label, action, className = "") {
+  const button = document.createElement("button");
+
+  button.type = "button";
+  button.textContent = label;
+
+  if (className) {
+    button.className = className;
+  }
+
+  button.onclick = action;
+  parent.append(button);
+
+  return button;
+}
+
+function addQuitButton(parent) {
+  addActionButton(
+    parent,
+    "QUIT",
+    () => {
+      if (confirm("Are you sure you want to leave this room?")) {
+        send("quit");
+      }
+    },
+    "quit-button"
+  );
 }
 
 function setupScoreBar() {
@@ -134,6 +194,16 @@ function setupScoreBar() {
       font-size: 16px;
       font-weight: 900;
     }
+
+    .quit-button {
+      margin-top: 18px;
+      background: #777;
+      color: white;
+    }
+
+    .rematch-button {
+      margin: 12px 6px;
+    }
   `;
 
   document.head.append(style);
@@ -150,7 +220,7 @@ function renderScoreBar(s) {
 
   const bar = $("scoreBar");
 
-  if (s.status === "lobby") {
+  if (s.view === "lobby" || s.view === "removed") {
     bar.style.display = "none";
     return;
   }
@@ -175,7 +245,16 @@ function renderScoreBar(s) {
 }
 
 function render(s) {
-  const inGame = s.status !== "lobby";
+  if (!s || s.view === "removed") {
+    returnHome("You are no longer in this room.");
+    return;
+  }
+
+  // Host status is controlled by the server.
+  isHost = !!s.isHost;
+
+  const inLobbyView = s.view === "lobby";
+  const inGame = !inLobbyView;
 
   $("siteHeader").classList.toggle("hidden", inGame);
   $("roomCode").classList.toggle("hidden", inGame);
@@ -192,7 +271,11 @@ function render(s) {
 
   const start = $("start");
 
-  start.classList.toggle("hidden", !isHost || s.status !== "lobby");
+  const canStart = inLobbyView &&
+    isHost &&
+    (s.status === "lobby" || s.status === "finished");
+
+  start.classList.toggle("hidden", !canStart);
   start.disabled = s.players.length < 3;
   start.textContent = s.players.length < 3
     ? `Waiting for players (${s.players.length}/3)`
@@ -203,9 +286,23 @@ function render(s) {
 
   renderScoreBar(s);
 
-  if (s.status === "lobby") {
-    area.innerHTML =
-      "<p>Waiting for everyone to join. You need at least 3 players.</p>";
+  // Each player has their own lobby view after choosing PLAY AGAIN.
+  if (inLobbyView) {
+    const heading = document.createElement("h2");
+    heading.textContent = "You're back in the lobby!";
+    area.append(heading);
+
+    const waiting = document.createElement("p");
+    waiting.textContent = isHost
+      ? "You're the host. Start a new game when at least 3 players are ready."
+      : "Waiting for the host to start a new game.";
+    area.append(waiting);
+
+    const count = document.createElement("p");
+    count.textContent = `${s.players.length} player${s.players.length === 1 ? "" : "s"} in the lobby`;
+    area.append(count);
+
+    addQuitButton(area);
     return;
   }
 
@@ -222,7 +319,26 @@ function render(s) {
           .map(p => `<li>${escapeHtml(p.name)} — ${p.score} points</li>`)
           .join("")}
       </ul>
+      <p>Choose what you'd like to do next.</p>
     `;
+
+    addActionButton(
+      area,
+      "PLAY AGAIN",
+      () => send("playAgain"),
+      "rematch-button"
+    );
+
+    addActionButton(
+      area,
+      "QUIT",
+      () => {
+        if (confirm("Are you sure you want to leave this room?")) {
+          send("quit");
+        }
+      },
+      "quit-button"
+    );
 
     return;
   }
@@ -332,11 +448,11 @@ function render(s) {
     area.append(result);
 
     if (isHost) {
-      const button = document.createElement("button");
-      button.textContent = "Next round";
-      button.onclick = () => send("next");
-      area.append(button);
-
+      addActionButton(
+        area,
+        "Next round",
+        () => send("next")
+      );
     } else {
       const waiting = document.createElement("p");
       waiting.textContent =
@@ -344,6 +460,8 @@ function render(s) {
       area.append(waiting);
     }
   }
+
+  addQuitButton(area);
 }
 
 function escapeHtml(v) {

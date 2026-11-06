@@ -1,13 +1,14 @@
 
-
-
-
 const $ = id => document.getElementById(id);
 
 let code = "";
 let playerId = "";
 let socket = null;
 let isHost = false;
+
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let lastResumeAttempt = 0;
 
 let chatOpen = false;
 let chatUnread = 0;
@@ -45,6 +46,14 @@ function returnHome(message = "") {
   playerId = "";
   isHost = false;
 
+  reconnectAttempt = 0;
+  lastResumeAttempt = 0;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
   chatOpen = false;
   chatUnread = 0;
   chatMessages = [];
@@ -72,15 +81,64 @@ function returnHome(message = "") {
   }
 }
 
+// --------------------------------------------------
+// CONNECTION AND AUTOMATIC RECONNECTION
+// --------------------------------------------------
+
+function scheduleReconnect() {
+  if (!code || !playerId || reconnectTimer) return;
+
+  const delay = Math.min(
+    1000 * Math.pow(2, reconnectAttempt),
+    10000
+  );
+
+  reconnectAttempt++;
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+
+    if (code && playerId) {
+      connect();
+    }
+  }, delay);
+}
+
 function connect() {
+  if (!code || !playerId) return;
+
+  if (
+    socket &&
+    (
+      socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING
+    )
+  ) {
+    return;
+  }
+
   const scheme = location.protocol === "https:" ? "wss" : "ws";
 
-  socket = new WebSocket(
+  const newSocket = new WebSocket(
     `${scheme}://${location.host}/api/rooms/${code}/socket?playerId=${encodeURIComponent(playerId)}`
   );
 
-  socket.onmessage = e => {
-    const d = JSON.parse(e.data);
+  socket = newSocket;
+
+  newSocket.onopen = () => {
+    reconnectAttempt = 0;
+  };
+
+  newSocket.onmessage = e => {
+    if (socket !== newSocket) return;
+
+    let d;
+
+    try {
+      d = JSON.parse(e.data);
+    } catch {
+      return;
+    }
 
     if (d.type === "state") {
       render(d.state);
@@ -103,17 +161,65 @@ function connect() {
     }
   };
 
-  socket.onclose = () => {
-    if (code) {
-      setTimeout(() => {
-        if (code && playerId) connect();
-      }, 1800);
+  newSocket.onclose = () => {
+    if (socket === newSocket) {
+      socket = null;
     }
+
+    if (code && playerId) {
+      scheduleReconnect();
+    }
+  };
+
+  newSocket.onerror = () => {
+    // The close handler will schedule the next attempt.
   };
 }
 
+// iPhones can suspend background tabs.
+// When the player returns, establish a fresh connection.
+function reconnectOnReturn() {
+  if (document.hidden || !code || !playerId) return;
+
+  // Prevent pageshow and visibilitychange triggering
+  // duplicate reconnects at practically the same time.
+  const now = Date.now();
+
+  if (now - lastResumeAttempt < 2000) return;
+
+  lastResumeAttempt = now;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  const oldSocket = socket;
+  socket = null;
+
+  if (oldSocket) {
+    oldSocket.onclose = null;
+
+    try {
+      oldSocket.close(1000, "Reconnecting after returning");
+    } catch {}
+  }
+
+  connect();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    reconnectOnReturn();
+  }
+});
+
+window.addEventListener("pageshow", () => {
+  reconnectOnReturn();
+});
+
 function send(type, extra = {}) {
-  if (socket?.readyState === 1) {
+  if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type, ...extra }));
   } else {
     msg("Reconnecting. Please try again.");
@@ -230,8 +336,6 @@ function setupScoreBar() {
       margin: 12px 6px;
     }
 
-    /* CHAT BUTTON */
-
     #chatDock {
       position: fixed;
       z-index: 1100;
@@ -262,8 +366,6 @@ function setupScoreBar() {
       from { transform: scale(1); }
       to { transform: scale(1.06); }
     }
-
-    /* CHAT WINDOW */
 
     #chatWindow {
       position: fixed;
@@ -353,8 +455,6 @@ function setupScoreBar() {
       color: #7c8492;
       margin-top: 4px;
     }
-
-    /* CHAT INPUT */
 
     #chatForm {
       flex: 0 0 auto;
@@ -515,7 +615,7 @@ function setupChatUI() {
       return;
     }
 
-    if (socket?.readyState !== 1) {
+    if (socket?.readyState !== WebSocket.OPEN) {
       msg("Reconnecting. Please try again.");
       return;
     }
@@ -537,7 +637,6 @@ function setupChatUI() {
   dock.append(button, window);
   document.body.append(dock);
 
-  // Close chat when tapping anywhere outside the chat window and button.
   document.addEventListener("pointerdown", event => {
     if (!chatOpen) return;
 
@@ -710,7 +809,6 @@ function render(s) {
   mergeChatMessages(s.chat);
   updateChatButton();
 
-  // Recognise the lobby from either the view or server status.
   const inLobbyView = s.view === "lobby" || s.status === "lobby";
   const inGame = !inLobbyView;
 

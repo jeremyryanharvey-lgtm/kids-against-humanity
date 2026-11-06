@@ -16,39 +16,280 @@ const shuffle = items => {
   return result;
 };
 
-// Basic family-friendly profanity filter.
+// --------------------------------------------------
+// GAME TIMER SETTINGS
+// --------------------------------------------------
+
+const TURN_TIME = 90 * 1000;
+
+// --------------------------------------------------
+// PROFANITY FILTER
+// --------------------------------------------------
+
 const PROFANITY = [
-  "asshole",
-  "bastard",
-  "bitch",
-  "bullshit",
-  "cock",
-  "crap",
-  "cunt",
-  "damn",
-  "dick",
-  "fuck",
-  "motherfucker",
-  "piss",
-  "shit",
-  "slut",
-  "whore"
+  // Strong profanity
+  "fuck", "fucker", "fuckers", "fucking", "fucked",
+  "fuckface", "fuckhead", "fuckwit",
+  "motherfucker", "motherfuckers", "motherfucking",
+  "shit", "shits", "shitty", "shitting", "shithead",
+  "shitface", "bullshit", "horseshit", "dipshit",
+  "bitch", "bitches", "bitchy", "bitching",
+  "bastard", "bastards",
+  "asshole", "assholes", "arsehole", "arseholes",
+  "dick", "dicks", "dickhead", "dickheads",
+  "cock", "cocks", "cocksucker", "cocksucking",
+  "piss", "pissed", "pissing", "pisser",
+  "pussy", "pussies", "cunt", "cunts",
+  "twat", "twats", "wanker", "wankers", "wanking",
+  "prick", "pricks", "bollocks", "bugger", "buggers",
+
+  // Milder profanity and insults
+  "damn", "dammit", "goddamn", "goddammit",
+  "crap", "crappy", "crapper",
+  "hell", "bloody",
+  "douche", "douchebag", "douchebags",
+  "dumbass", "dumbasses", "jackass", "jackasses",
+  "jerkoff", "moron", "morons", "idiot", "idiots",
+  "slut", "sluts", "whore", "whores",
+
+  // Sexual language
+  "penis", "vagina", "boobs", "boobies",
+  "tits", "titty", "titties",
+  "ballsack", "nutsack", "boner",
+  "blowjob", "handjob", "masturbate",
+  "masturbation", "orgasm", "orgasms",
+  "dildo", "porn", "porno", "pornography",
+
+  // Common alternative spellings
+  "fuk", "fuking", "fukin", "fck", "fcking",
+  "phuck", "fuq", "fuqq", "fux",
+  "shyt", "shiit", "shitt", "sh1t",
+  "biatch", "biotch", "bich",
+  "azz", "dik", "dikk", "kock", "kunt",
+  "bstrd", "bastid", "douchbag"
 ];
 
-function filterProfanity(text) {
-  let filtered = String(text);
+// Characters that can be used to disguise letters.
+const CONFUSABLES = {
+  // Numbers and symbols
+  "0": "o",
+  "1": "i",
+  "3": "e",
+  "4": "a",
+  "5": "s",
+  "7": "t",
+  "8": "b",
+  "@": "a",
+  "$": "s",
 
-  for (const word of PROFANITY) {
-    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`\\b${escaped}\\b`, "gi");
+  // Cyrillic lookalikes
+  "а": "a",
+  "с": "c",
+  "е": "e",
+  "і": "i",
+  "о": "o",
+  "р": "p",
+  "х": "x",
+  "у": "y",
+  "к": "k",
+  "м": "m",
+  "т": "t",
+  "в": "b",
+  "н": "h",
+  "ј": "j",
 
-    filtered = filtered.replace(regex, match =>
-      "*".repeat(match.length)
-    );
+  // Greek lookalikes
+  "α": "a",
+  "β": "b",
+  "ε": "e",
+  "ι": "i",
+  "κ": "k",
+  "ο": "o",
+  "ρ": "p",
+  "τ": "t",
+  "υ": "u",
+  "χ": "x"
+};
+
+function normaliseCharacter(char) {
+  const lower = char.toLowerCase();
+
+  const mapped = CONFUSABLES[lower] || lower;
+
+  return mapped
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z]/g, "");
+}
+
+function normaliseWord(value) {
+  return Array.from(String(value))
+    .map(normaliseCharacter)
+    .join("")
+    .replace(/(.)\1+/g, "$1");
+}
+
+const PROFANITY_SET = new Set(
+  PROFANITY.map(normaliseWord)
+);
+
+// Returns normalised letters and their original positions.
+function normaliseWithPositions(value, offset = 0) {
+  let text = "";
+  const positions = [];
+
+  let index = offset;
+
+  for (const character of value) {
+    const converted = normaliseCharacter(character);
+
+    for (const letter of converted) {
+      text += letter;
+      positions.push(index);
+    }
+
+    index += character.length;
   }
 
-  return filtered;
+  return { text, positions };
 }
+
+function filterProfanity(message) {
+  const original = String(message);
+  const blockedRanges = [];
+
+  // Find normal words and disguised words inside individual
+  // sections of text.
+  const tokens = [];
+
+  for (const match of original.matchAll(/\S+/gu)) {
+    const start = match.index;
+    const value = match[0];
+
+    const normalised = normaliseWithPositions(value, start);
+
+    tokens.push({
+      start,
+      end: start + value.length - 1,
+      text: normalised.text,
+      positions: normalised.positions
+    });
+  }
+
+  // Check individual words.
+  for (const token of tokens) {
+    if (!token.text) continue;
+
+    for (const badWord of PROFANITY_SET) {
+      if (!badWord || badWord.length < 3) continue;
+
+      let searchFrom = 0;
+
+      while (true) {
+        const found = token.text.indexOf(badWord, searchFrom);
+
+        if (found === -1) break;
+
+        const before = token.text[found - 1] || "";
+        const after = token.text[found + badWord.length] || "";
+
+        const leftBoundary = !/[a-z]/.test(before);
+        const rightBoundary = !/[a-z]/.test(after);
+
+        if (leftBoundary && rightBoundary) {
+          blockedRanges.push({
+            start: token.positions[found],
+            end: token.positions[found + badWord.length - 1]
+          });
+        }
+
+        searchFrom = found + 1;
+      }
+    }
+  }
+
+  // Check separated single letters, such as:
+  // f u c k
+  // f.u.c.k
+  // f - u - c - k
+  let group = [];
+
+  const checkGroup = () => {
+    if (group.length < 3) {
+      group = [];
+      return;
+    }
+
+    const combined = group.map(x => x.text).join("");
+
+    for (const badWord of PROFANITY_SET) {
+      if (combined.includes(badWord)) {
+        const found = combined.indexOf(badWord);
+
+        const startToken = group[found];
+        const endToken = group[found + badWord.length - 1];
+
+        if (startToken && endToken) {
+          blockedRanges.push({
+            start: startToken.start,
+            end: endToken.end
+          });
+        }
+      }
+    }
+
+    group = [];
+  };
+
+  for (const token of tokens) {
+    if (token.text.length === 1) {
+      if (
+        group.length &&
+        token.start - group[group.length - 1].end > 4
+      ) {
+        checkGroup();
+      }
+
+      group.push(token);
+    } else {
+      checkGroup();
+    }
+  }
+
+  checkGroup();
+
+  // Sort and merge overlapping matches.
+  blockedRanges.sort((a, b) => a.start - b.start);
+
+  const merged = [];
+
+  for (const range of blockedRanges) {
+    const last = merged[merged.length - 1];
+
+    if (last && range.start <= last.end + 1) {
+      last.end = Math.max(last.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+
+  // Replace offending characters with asterisks.
+  const result = original.split("");
+
+  for (const range of merged) {
+    for (let i = range.start; i <= range.end; i++) {
+      if (!/\s/.test(result[i])) {
+        result[i] = "*";
+      }
+    }
+  }
+
+  return result.join("");
+}
+
+// --------------------------------------------------
+// MAIN WORKER
+// --------------------------------------------------
 
 export default {
   async fetch(request, env) {
@@ -117,6 +358,10 @@ export default {
   }
 };
 
+// --------------------------------------------------
+// DURABLE OBJECT GAME ROOM
+// --------------------------------------------------
+
 export class GameRoom {
   constructor(ctx, env) {
     this.ctx = ctx;
@@ -137,6 +382,190 @@ export class GameRoom {
       await this.ctx.storage.put("game", this.state);
     }
   }
+
+  // --------------------------------------------------
+  // TIMER FUNCTIONS
+  // --------------------------------------------------
+
+  startSubmissionTimers() {
+    const s = this.state;
+
+    s.submissionDeadlines = {};
+    s.judgeDeadline = null;
+    s.revealed = false;
+
+    const deadline = Date.now() + TURN_TIME;
+
+    for (const player of s.players) {
+      if (player.id !== s.judgeId) {
+        s.submissionDeadlines[player.id] = deadline;
+      }
+    }
+  }
+
+  startJudgeTimerIfReady() {
+    const s = this.state;
+    const required = s.players.length - 1;
+
+    if (s.submissions.length >= required) {
+      s.revealed = true;
+      s.submissionDeadlines = {};
+
+      if (!s.judgeDeadline) {
+        s.judgeDeadline = Date.now() + TURN_TIME;
+      }
+
+      return true;
+    }
+
+    s.revealed = false;
+    s.judgeDeadline = null;
+
+    return false;
+  }
+
+  async scheduleAlarm() {
+    const s = this.state;
+
+    if (!s || s.status !== "playing") {
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+
+    const deadlines = [
+      ...Object.values(s.submissionDeadlines || {}),
+      ...(s.judgeDeadline ? [s.judgeDeadline] : [])
+    ].filter(Number.isFinite);
+
+    if (!deadlines.length) {
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+
+    await this.ctx.storage.setAlarm(Math.min(...deadlines));
+  }
+
+  recordAutomaticSubmission(player) {
+    const s = this.state;
+
+    if (!player || !player.hand || player.hand.length === 0) {
+      return false;
+    }
+
+    const index = Math.floor(Math.random() * player.hand.length);
+    const card = player.hand.splice(index, 1)[0];
+
+    s.answerDiscard.push(card);
+
+    s.submissions.push({
+      playerId: player.id,
+      submissionId: crypto.randomUUID(),
+      cardId: card.id,
+      answer: card.text
+    });
+
+    return true;
+  }
+
+  resolveWinner(chosen) {
+    const s = this.state;
+
+    if (!chosen) return;
+
+    const winner = s.players.find(
+      p => p.id === chosen.playerId
+    );
+
+    if (winner) {
+      winner.score += 1;
+    }
+
+    s.winnerId = chosen.playerId;
+    s.submissionDeadlines = {};
+    s.judgeDeadline = null;
+
+    if (winner && winner.score >= s.targetScore) {
+      s.status = "finished";
+
+      for (const p of s.players) {
+        p.inLobby = false;
+      }
+    } else {
+      s.status = "between";
+      this.dealHands();
+    }
+  }
+
+  // Cloudflare Durable Object alarm.
+  async alarm() {
+    const s = await this.load();
+
+    if (!s || s.status !== "playing") {
+      return;
+    }
+
+    let changed = false;
+    const now = Date.now();
+
+    if (!s.submissionDeadlines) {
+      s.submissionDeadlines = {};
+    }
+
+    // Automatically submit random cards for players
+    // whose individual 90-second timers have expired.
+    for (const [playerId, deadline] of Object.entries(
+      s.submissionDeadlines
+    )) {
+      if (deadline > now) continue;
+
+      const player = s.players.find(p => p.id === playerId);
+
+      if (
+        player &&
+        playerId !== s.judgeId &&
+        !s.submissions.some(x => x.playerId === playerId)
+      ) {
+        this.recordAutomaticSubmission(player);
+      }
+
+      delete s.submissionDeadlines[playerId];
+      changed = true;
+    }
+
+    // If everyone has submitted, start the judge's timer.
+    if (s.submissions.length >= s.players.length - 1) {
+      if (!s.revealed || !s.judgeDeadline) {
+        this.startJudgeTimerIfReady();
+        changed = true;
+      }
+    }
+
+    // Automatically select a random answer if the judge's
+    // separate 90-second timer expires.
+    if (
+      s.revealed &&
+      s.judgeDeadline &&
+      s.judgeDeadline <= now &&
+      s.submissions.length > 0
+    ) {
+      const index = Math.floor(Math.random() * s.submissions.length);
+      const chosen = s.submissions[index];
+
+      this.resolveWinner(chosen);
+      changed = true;
+    }
+
+    await this.save();
+    await this.scheduleAlarm();
+
+    if (changed) {
+      await this.broadcast();
+    }
+  }
+
+  // --------------------------------------------------
+  // DECK FUNCTIONS
+  // --------------------------------------------------
 
   async loadDeck(path) {
     const response = await this.env.ASSETS.fetch(
@@ -243,6 +672,10 @@ export class GameRoom {
     }
   }
 
+  // --------------------------------------------------
+  // PUBLIC GAME STATE
+  // --------------------------------------------------
+
   publicState(playerId = null) {
     const s = this.state;
 
@@ -300,10 +733,13 @@ export class GameRoom {
         ? viewer?.hand || []
         : [],
 
-      // Chat history is visible to everyone in the room.
       chat: s.chat || []
     };
   }
+
+  // --------------------------------------------------
+  // NOTIFICATIONS AND BROADCASTS
+  // --------------------------------------------------
 
   async notifyHost(message) {
     if (!this.state) return;
@@ -381,8 +817,14 @@ export class GameRoom {
     }
 
     this.state = null;
+
+    await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
   }
+
+  // --------------------------------------------------
+  // DURABLE OBJECT REQUEST HANDLING
+  // --------------------------------------------------
 
   async fetch(request) {
     const url = new URL(request.url);
@@ -418,8 +860,10 @@ export class GameRoom {
           revealed: false,
           winnerId: null,
 
-          // Shared chat history for this room.
-          chat: []
+          chat: [],
+
+          submissionDeadlines: {},
+          judgeDeadline: null
         };
 
         await this.save();
@@ -504,6 +948,10 @@ export class GameRoom {
     return json({ error: "Not found." }, 404);
   }
 
+  // --------------------------------------------------
+  // WEBSOCKET GAME ACTIONS
+  // --------------------------------------------------
+
   async webSocketMessage(ws, message) {
     let data;
 
@@ -523,7 +971,7 @@ export class GameRoom {
 
     if (!player) return;
 
-    // CHAT: send a filtered message to everyone in the room.
+    // CHAT
     if (data.type === "chat") {
       const originalText = String(data.text || "").trim();
 
@@ -554,7 +1002,6 @@ export class GameRoom {
 
       s.chat.push(chatMessage);
 
-      // Keep only the latest 100 messages.
       if (s.chat.length > 100) {
         s.chat = s.chat.slice(-100);
       }
@@ -565,7 +1012,7 @@ export class GameRoom {
       return;
     }
 
-    // Player chooses to leave the room.
+    // PLAYER QUITS
     if (data.type === "quit") {
       const leavingIndex = s.players.findIndex(p => p.id === playerId);
       const wasHost = playerId === s.hostId;
@@ -577,6 +1024,10 @@ export class GameRoom {
       s.submissions = s.submissions.filter(
         x => x.playerId !== playerId
       );
+
+      if (s.submissionDeadlines) {
+        delete s.submissionDeadlines[playerId];
+      }
 
       if (s.players.length === 0) {
         await this.closeRoom();
@@ -596,6 +1047,10 @@ export class GameRoom {
         s.submissions = s.submissions.filter(
           x => x.playerId !== s.judgeId
         );
+
+        if (s.submissionDeadlines) {
+          delete s.submissionDeadlines[s.judgeId];
+        }
       } else {
         s.judgeIndex = Math.max(
           0,
@@ -604,7 +1059,21 @@ export class GameRoom {
       }
 
       if (s.status === "playing") {
-        s.revealed = s.submissions.length >= s.players.length - 1;
+        if (!s.submissionDeadlines) {
+          s.submissionDeadlines = {};
+        }
+
+        for (const p of s.players) {
+          if (
+            p.id !== s.judgeId &&
+            !s.submissions.some(x => x.playerId === p.id) &&
+            !s.submissionDeadlines[p.id]
+          ) {
+            s.submissionDeadlines[p.id] = Date.now() + TURN_TIME;
+          }
+        }
+
+        this.startJudgeTimerIfReady();
       }
 
       if (
@@ -617,6 +1086,8 @@ export class GameRoom {
         s.submissions = [];
         s.revealed = false;
         s.winnerId = null;
+        s.submissionDeadlines = {};
+        s.judgeDeadline = null;
 
         for (const p of s.players) {
           p.inLobby = true;
@@ -625,6 +1096,7 @@ export class GameRoom {
       }
 
       await this.save();
+      await this.scheduleAlarm();
       await this.broadcast();
 
       if (wasHost) {
@@ -649,7 +1121,7 @@ export class GameRoom {
       return;
     }
 
-    // Player returns to the lobby after a finished game.
+    // PLAYER RETURNS TO LOBBY AFTER FINISHED GAME
     if (
       data.type === "playAgain" &&
       s.status === "finished"
@@ -658,7 +1130,7 @@ export class GameRoom {
       player.hand = [];
     }
 
-    // Host starts a fresh game with the players currently in the lobby.
+    // HOST STARTS A NEW GAME
     else if (
       data.type === "start" &&
       playerId === s.hostId &&
@@ -716,6 +1188,9 @@ export class GameRoom {
         s.revealed = false;
         s.winnerId = null;
 
+        // Start each non-judge player's 90-second timer.
+        this.startSubmissionTimers();
+
       } catch (error) {
         s.players = previousPlayers;
 
@@ -730,7 +1205,7 @@ export class GameRoom {
       }
     }
 
-    // Player submits one answer card.
+    // PLAYER SUBMITS AN ANSWER
     else if (
       data.type === "submit" &&
       s.status === "playing" &&
@@ -760,12 +1235,15 @@ export class GameRoom {
         answer: card.text
       });
 
-      if (s.submissions.length === s.players.length - 1) {
-        s.revealed = true;
+      if (s.submissionDeadlines) {
+        delete s.submissionDeadlines[playerId];
       }
+
+      // The judge's timer starts only when every answer is in.
+      this.startJudgeTimerIfReady();
     }
 
-    // Judge selects the winning answer.
+    // JUDGE PICKS WINNER
     else if (
       data.type === "pick" &&
       playerId === s.judgeId &&
@@ -778,29 +1256,10 @@ export class GameRoom {
 
       if (!chosen) return;
 
-      const winner = s.players.find(
-        p => p.id === chosen.playerId
-      );
-
-      if (winner) {
-        winner.score += 1;
-      }
-
-      s.winnerId = chosen.playerId;
-
-      if (winner && winner.score >= s.targetScore) {
-        s.status = "finished";
-
-        for (const p of s.players) {
-          p.inLobby = false;
-        }
-      } else {
-        s.status = "between";
-        this.dealHands();
-      }
+      this.resolveWinner(chosen);
     }
 
-    // Host advances to the next round.
+    // HOST ADVANCES TO NEXT ROUND
     else if (
       data.type === "next" &&
       playerId === s.hostId &&
@@ -814,11 +1273,19 @@ export class GameRoom {
       s.revealed = false;
       s.winnerId = null;
       s.status = "playing";
+
+      // Start fresh 90-second timers for the new round.
+      this.startSubmissionTimers();
     }
 
     await this.save();
+    await this.scheduleAlarm();
     await this.broadcast();
   }
+
+  // --------------------------------------------------
+  // WEBSOCKET CONNECTION EVENTS
+  // --------------------------------------------------
 
   async webSocketClose(ws) {
     const attachment = ws.deserializeAttachment();

@@ -64,17 +64,125 @@ function send(type, extra = {}) {
   }
 }
 
+function setupScoreBar() {
+  if ($("scoreBar")) return;
+
+  const style = document.createElement("style");
+
+  style.textContent = `
+    body {
+      padding-bottom: 115px !important;
+    }
+
+    #scoreBar {
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: #18213a;
+      color: white;
+      box-shadow: 0 -4px 18px rgba(0,0,0,0.16);
+      display: none;
+    }
+
+    #scoreBar .score-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      margin-bottom: 7px;
+      text-align: center;
+    }
+
+    #scoreBar .score-list {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 0;
+      scrollbar-width: none;
+    }
+
+    #scoreBar .score-list::-webkit-scrollbar {
+      display: none;
+    }
+
+    #scoreBar .score-player {
+      flex: 0 0 auto;
+      min-width: 76px;
+      padding: 7px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.13);
+      text-align: center;
+      font-size: 12px;
+    }
+
+    #scoreBar .score-player.current {
+      background: white;
+      color: #18213a;
+    }
+
+    #scoreBar .score-name {
+      display: block;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    #scoreBar .score-points {
+      display: block;
+      margin-top: 3px;
+      font-size: 16px;
+      font-weight: 900;
+    }
+  `;
+
+  document.head.append(style);
+
+  const bar = document.createElement("div");
+  bar.id = "scoreBar";
+  bar.setAttribute("aria-label", "Game scores");
+
+  document.body.append(bar);
+}
+
+function renderScoreBar(s) {
+  setupScoreBar();
+
+  const bar = $("scoreBar");
+
+  if (s.status === "lobby") {
+    bar.style.display = "none";
+    return;
+  }
+
+  bar.style.display = "block";
+
+  const players = [...s.players].sort((a, b) => b.score - a.score);
+
+  bar.innerHTML = `
+    <div class="score-title">LIVE SCORES</div>
+    <div class="score-list">
+      ${players.map(p => `
+        <div class="score-player ${p.id === playerId ? "current" : ""}">
+          <span class="score-name">
+            ${escapeHtml(p.name)}${p.id === s.judgeId ? " 👑" : ""}
+          </span>
+          <span class="score-points">${p.score}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 function render(s) {
   const inGame = s.status !== "lobby";
 
-  // Hide all lobby branding and information during gameplay.
   $("siteHeader").classList.toggle("hidden", inGame);
   $("roomCode").classList.toggle("hidden", inGame);
   $("roomCode").previousElementSibling.classList.toggle("hidden", inGame);
   $("players").classList.toggle("hidden", inGame);
   $("players").previousElementSibling.classList.toggle("hidden", inGame);
 
-  // Hide the lobby status during gameplay.
   $("status").classList.toggle("hidden", inGame);
   $("status").textContent = inGame ? "" : "Waiting for players";
 
@@ -92,6 +200,8 @@ function render(s) {
 
   const area = $("gameArea");
   area.innerHTML = "";
+
+  renderScoreBar(s);
 
   if (s.status === "lobby") {
     area.innerHTML =
@@ -117,6 +227,12 @@ function render(s) {
     return;
   }
 
+  // Exactly one round heading, visible to the judge and all players.
+  const roundHeading = document.createElement("h2");
+  roundHeading.className = "round-heading";
+  roundHeading.textContent = `Round ${s.round}`;
+  area.append(roundHeading);
+
   const question = document.createElement("h2");
   question.className = "question";
   question.textContent = s.question || "";
@@ -132,7 +248,7 @@ function render(s) {
         "You're judging this round. Waiting for the other players...";
       area.append(waiting);
 
-    } else if (hand.length < 10) {
+    } else if (s.hasSubmitted) {
       const waiting = document.createElement("p");
       waiting.textContent =
         "Your card has been submitted. Waiting for the judge...";

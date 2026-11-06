@@ -1,12 +1,11 @@
 
-
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
     headers: { "content-type": "application/json; charset=utf-8" }
   });
 
-const shuffle = (items) => {
+const shuffle = items => {
   const result = [...items];
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -122,9 +121,41 @@ export class GameRoom {
       this.loadDeck("answers.json")
     ]);
 
+    // Remove duplicate answer IDs and duplicate answer text.
+    // This prevents identical cards being dealt as separate cards.
+    const uniqueAnswers = [];
+    const seenIds = new Set();
+    const seenTexts = new Set();
+
+    for (const card of answers) {
+      if (!card || !card.id || !card.text) continue;
+
+      const id = String(card.id);
+      const text = String(card.text).trim();
+      const normalisedText = text.toLowerCase().replace(/\s+/g, " ");
+
+      if (!text || seenIds.has(id) || seenTexts.has(normalisedText)) {
+        continue;
+      }
+
+      seenIds.add(id);
+      seenTexts.add(normalisedText);
+
+      uniqueAnswers.push({
+        id,
+        text
+      });
+    }
+
+    if (uniqueAnswers.length < 10 * s.players.length) {
+      throw new Error(
+        "There aren't enough unique answer cards for everyone. Please check answers.json."
+      );
+    }
+
     s.questionDeck = shuffle(questions);
     s.usedQuestions = [];
-    s.answerDeck = shuffle(answers);
+    s.answerDeck = shuffle(uniqueAnswers);
     s.answerDiscard = [];
   }
 
@@ -187,7 +218,6 @@ export class GameRoom {
 
       question: s.question,
 
-      // Submission identities are replaced with anonymous tokens.
       submissions: s.revealed
         ? s.submissions.map(x => ({
             playerId: x.submissionId,
@@ -199,6 +229,11 @@ export class GameRoom {
 
       revealed: s.revealed,
       winnerId: s.winnerId,
+
+      // Explicit submission status for this player.
+      hasSubmitted: playerId
+        ? s.submissions.some(x => x.playerId === playerId)
+        : false,
 
       // Only the owner of a hand receives its cards.
       hand: playerId
@@ -344,7 +379,6 @@ export class GameRoom {
     const s = await this.load();
     if (!s) return;
 
-    // The player identity comes from the socket, not the message.
     const attachment = ws.deserializeAttachment();
     const playerId = attachment?.playerId;
 
@@ -374,6 +408,7 @@ export class GameRoom {
         s.submissions = [];
         s.revealed = false;
         s.winnerId = null;
+
       } catch (error) {
         ws.send(JSON.stringify({
           type: "error",
@@ -388,41 +423,28 @@ export class GameRoom {
       playerId !== s.judgeId &&
       !s.revealed
     ) {
-      // New card-based submission.
-      let answer = "";
-      let cardId = null;
+      // Only allow a real card from this player's hand.
+      if (!data.cardId) return;
 
-      if (data.cardId) {
-        const index = player.hand.findIndex(
-          card => card.id === data.cardId
-        );
+      // Prevent multiple submissions.
+      if (s.submissions.some(x => x.playerId === playerId)) return;
 
-        if (index === -1) return;
+      const index = player.hand.findIndex(
+        card => card.id === data.cardId
+      );
 
-        // Prevent a player from submitting more than one card.
-        if (s.submissions.some(x => x.playerId === playerId)) return;
+      if (index === -1) return;
 
-        const card = player.hand.splice(index, 1)[0];
-        answer = card.text;
-        cardId = card.id;
+      const card = player.hand.splice(index, 1)[0];
 
-        s.answerDiscard.push(card);
-      } else {
-        // Temporary compatibility with the old typed-answer screen.
-        answer = String(data.answer || "").trim().slice(0, 100);
-      }
+      s.answerDiscard.push(card);
 
-      if (
-        answer &&
-        !s.submissions.some(x => x.playerId === playerId)
-      ) {
-        s.submissions.push({
-          playerId,
-          submissionId: crypto.randomUUID(),
-          cardId,
-          answer
-        });
-      }
+      s.submissions.push({
+        playerId,
+        submissionId: crypto.randomUUID(),
+        cardId: card.id,
+        answer: card.text
+      });
 
       if (s.submissions.length === s.players.length - 1) {
         s.revealed = true;
@@ -448,13 +470,10 @@ export class GameRoom {
 
       s.winnerId = chosen.playerId;
 
-      // Finish immediately when a player reaches the target score.
       if (winner && winner.score >= s.targetScore) {
         s.status = "finished";
       } else {
         s.status = "between";
-
-        // Refill everyone's hand to ten cards for the next round.
         this.dealHands();
       }
 

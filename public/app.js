@@ -37,6 +37,7 @@ function showRoom() {
   $("home").classList.add("hidden");
   $("room").classList.remove("hidden");
   $("roomCode").textContent = code;
+
   setupChatUI();
   $("chatDock").classList.remove("hidden");
 }
@@ -178,11 +179,10 @@ function connect() {
 
 // iPhones can suspend background tabs.
 // When the player returns, establish a fresh connection.
+
 function reconnectOnReturn() {
   if (document.hidden || !code || !playerId) return;
 
-  // Prevent pageshow and visibilitychange triggering
-  // duplicate reconnects at practically the same time.
   const now = Date.now();
 
   if (now - lastResumeAttempt < 2000) return;
@@ -254,6 +254,10 @@ function addQuitButton(parent) {
     "quit-button"
   );
 }
+
+// --------------------------------------------------
+// SCORE BAR
+// --------------------------------------------------
 
 function setupScoreBar() {
   if ($("scoreBar")) return;
@@ -335,199 +339,6 @@ function setupScoreBar() {
     .rematch-button {
       margin: 12px 6px;
     }
-
-    #chatDock {
-      position: fixed;
-      z-index: 1100;
-      right: 14px;
-      bottom: calc(125px + env(safe-area-inset-bottom));
-    }
-
-    #chatButton {
-      border: 0;
-      border-radius: 30px;
-      padding: 13px 23px;
-      background: #18213a;
-      color: white;
-      font-weight: 900;
-      font-size: 14px;
-      letter-spacing: 1px;
-      box-shadow: 0 3px 12px rgba(0,0,0,0.3);
-      cursor: pointer;
-    }
-
-    #chatButton.has-unread {
-      background: #ff8c00;
-      color: #18213a;
-      animation: chatPulse 1s infinite alternate;
-    }
-
-    @keyframes chatPulse {
-      from { transform: scale(1); }
-      to { transform: scale(1.06); }
-    }
-
-    #chatWindow {
-      position: fixed;
-      z-index: 1101;
-      right: 12px;
-      bottom: calc(180px + env(safe-area-inset-bottom));
-      width: min(350px, calc(100vw - 24px));
-      height: min(440px, 60vh);
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 5px 30px rgba(0,0,0,0.3);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      color: #18213a;
-      box-sizing: border-box;
-    }
-
-    #chatWindow.hidden {
-      display: none;
-    }
-
-    #chatHeader {
-      flex: 0 0 auto;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 13px 15px;
-      background: #18213a;
-      color: white;
-      font-weight: 900;
-    }
-
-    #chatClose {
-      border: 0;
-      background: transparent;
-      color: white;
-      font-size: 24px;
-      padding: 0 5px;
-      cursor: pointer;
-    }
-
-    #chatMessages {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow-y: auto;
-      padding: 12px;
-      background: #f2f4f8;
-      display: flex;
-      flex-direction: column;
-      gap: 9px;
-    }
-
-    .chat-message {
-      max-width: 88%;
-      padding: 9px 11px;
-      border-radius: 12px;
-      background: white;
-      overflow-wrap: anywhere;
-      align-self: flex-start;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    }
-
-    .chat-message.mine {
-      align-self: flex-end;
-      background: #dce8ff;
-    }
-
-    .chat-message-name {
-      display: block;
-      font-size: 11px;
-      font-weight: 900;
-      color: #52617c;
-      margin-bottom: 3px;
-    }
-
-    .chat-message-text {
-      font-size: 14px;
-      white-space: pre-wrap;
-      line-height: 1.4;
-    }
-
-    .chat-message-time {
-      display: block;
-      text-align: right;
-      font-size: 10px;
-      color: #7c8492;
-      margin-top: 4px;
-    }
-
-    #chatForm {
-      flex: 0 0 auto;
-      display: flex !important;
-      flex-direction: row !important;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      box-sizing: border-box;
-      padding: 10px;
-      background: white;
-      border-top: 1px solid #ddd;
-    }
-
-    #chatInput {
-      display: block;
-      flex: 1 1 0% !important;
-      width: 0 !important;
-      min-width: 0 !important;
-      max-width: none !important;
-      height: 46px;
-      min-height: 46px;
-      max-height: 46px;
-      box-sizing: border-box;
-      resize: none;
-      border: 1px solid #cbd0da;
-      border-radius: 10px;
-      padding: 11px;
-      margin: 0;
-      font-family: inherit;
-      font-size: 16px;
-      line-height: 22px;
-      color: #18213a;
-      outline: none;
-      overflow-y: auto;
-      -webkit-appearance: none;
-    }
-
-    #chatInput:focus {
-      border-color: #526da8;
-    }
-
-    #chatSend {
-      display: block;
-      flex: 0 0 88px !important;
-      width: 88px !important;
-      min-width: 88px !important;
-      max-width: 88px !important;
-      height: 46px;
-      box-sizing: border-box;
-      border: 0;
-      border-radius: 10px;
-      padding: 0 8px;
-      margin: 0;
-      background: #18213a;
-      color: white;
-      font-weight: 800;
-      font-size: 14px;
-      cursor: pointer;
-      -webkit-appearance: none;
-    }
-
-    #chatSend:disabled {
-      opacity: 0.5;
-    }
-
-    @media (max-width: 480px) {
-      #chatWindow {
-        right: 8px;
-        width: calc(100vw - 16px);
-        bottom: calc(175px + env(safe-area-inset-bottom));
-      }
-    }
   `;
 
   document.head.append(style);
@@ -535,8 +346,13 @@ function setupScoreBar() {
   const bar = document.createElement("div");
   bar.id = "scoreBar";
   bar.setAttribute("aria-label", "Game scores");
+
   document.body.append(bar);
 }
+
+// --------------------------------------------------
+// CHAT
+// --------------------------------------------------
 
 function setupChatUI() {
   if (chatReady) return;
@@ -621,6 +437,7 @@ function setupChatUI() {
     }
 
     send("chat", { text });
+
     input.value = "";
     input.focus();
   };
@@ -635,6 +452,7 @@ function setupChatUI() {
   form.append(input, sendButton);
   window.append(header, messages, form);
   dock.append(button, window);
+
   document.body.append(dock);
 
   document.addEventListener("pointerdown", event => {
@@ -670,11 +488,16 @@ function mergeChatMessages(messages) {
   if (!Array.isArray(messages)) return;
 
   const known = new Set(chatMessages.map(m => m.id));
+  let newUnread = 0;
 
   for (const message of messages) {
     if (message?.id && !known.has(message.id)) {
       chatMessages.push(message);
       known.add(message.id);
+
+      if (!chatOpen && message.playerId !== playerId) {
+        newUnread++;
+      }
     }
   }
 
@@ -682,6 +505,11 @@ function mergeChatMessages(messages) {
 
   if (chatMessages.length > 100) {
     chatMessages = chatMessages.slice(-100);
+  }
+
+  if (newUnread > 0) {
+    chatUnread += newUnread;
+    updateChatButton();
   }
 }
 
@@ -720,17 +548,18 @@ function renderChatMessages() {
 
   if (chatMessages.length === 0) {
     const empty = document.createElement("p");
+
     empty.textContent = "No messages yet. Say hello!";
     empty.style.textAlign = "center";
     empty.style.color = "#777";
     empty.style.marginTop = "25px";
+
     container.append(empty);
     return;
   }
 
   chatMessages.forEach(message => {
     const item = document.createElement("div");
-
     item.className = "chat-message";
 
     if (message.playerId === playerId) {
@@ -761,6 +590,10 @@ function renderChatMessages() {
 
   container.scrollTop = container.scrollHeight;
 }
+
+// --------------------------------------------------
+// SCORES
+// --------------------------------------------------
 
 function renderScoreBar(s) {
   setupScoreBar();
@@ -794,6 +627,10 @@ function renderScoreBar(s) {
     </div>
   `;
 }
+
+// --------------------------------------------------
+// GAME RENDERING
+// --------------------------------------------------
 
 function render(s) {
   if (!s || s.view === "removed") {
@@ -832,7 +669,9 @@ function render(s) {
     (s.status === "lobby" || s.status === "finished");
 
   start.classList.toggle("hidden", !canStart);
+
   start.disabled = s.players.length < 3;
+
   start.textContent = s.players.length < 3
     ? `Waiting for players (${s.players.length}/3)`
     : "Start game";
@@ -848,9 +687,11 @@ function render(s) {
     area.append(heading);
 
     const waiting = document.createElement("p");
+
     waiting.textContent = isHost
       ? "You're the host. Start a new game when at least 3 players are ready."
       : "Waiting for the host to start the game.";
+
     area.append(waiting);
 
     const count = document.createElement("p");
@@ -914,14 +755,18 @@ function render(s) {
   if (s.status === "playing" && !s.revealed) {
     if (isJudge) {
       const waiting = document.createElement("p");
+
       waiting.textContent =
         "You're judging this round. Waiting for the other players...";
+
       area.append(waiting);
 
     } else if (s.hasSubmitted) {
       const waiting = document.createElement("p");
+
       waiting.textContent =
         "Your card has been submitted. Waiting for the judge...";
+
       area.append(waiting);
 
     } else {
@@ -977,8 +822,10 @@ function render(s) {
 
     } else {
       const waiting = document.createElement("p");
+
       waiting.textContent =
         "All answers are in. The judge is choosing the winner...";
+
       area.append(waiting);
     }
   }
@@ -1007,16 +854,23 @@ function render(s) {
         "Next round",
         () => send("next")
       );
+
     } else {
       const waiting = document.createElement("p");
+
       waiting.textContent =
         "Waiting for the host to start the next round...";
+
       area.append(waiting);
     }
   }
 
   addQuitButton(area);
 }
+
+// --------------------------------------------------
+// HELPERS
+// --------------------------------------------------
 
 function escapeHtml(v) {
   return String(v).replace(/[&<>"']/g, c => ({
@@ -1028,9 +882,14 @@ function escapeHtml(v) {
   }[c]));
 }
 
+// --------------------------------------------------
+// CREATE ROOM
+// --------------------------------------------------
+
 $("create").onclick = async () => {
   try {
     const name = $("name").value.trim() || "Host";
+
     const d = await api("/api/rooms", { name });
 
     code = d.code;
@@ -1045,6 +904,10 @@ $("create").onclick = async () => {
     msg(e.message);
   }
 };
+
+// --------------------------------------------------
+// JOIN ROOM
+// --------------------------------------------------
 
 $("join").onclick = async () => {
   try {
@@ -1069,6 +932,10 @@ $("join").onclick = async () => {
 };
 
 $("start").onclick = () => send("start");
+
+// --------------------------------------------------
+// SERVICE WORKER
+// --------------------------------------------------
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});

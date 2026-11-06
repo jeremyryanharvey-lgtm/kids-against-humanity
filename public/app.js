@@ -1,5 +1,6 @@
 
 
+
 const $ = id => document.getElementById(id);
 
 let code = "";
@@ -277,6 +278,7 @@ function setupScoreBar() {
       flex-direction: column;
       overflow: hidden;
       color: #18213a;
+      box-sizing: border-box;
     }
 
     #chatWindow.hidden {
@@ -304,7 +306,8 @@ function setupScoreBar() {
     }
 
     #chatMessages {
-      flex: 1;
+      flex: 1 1 auto;
+      min-height: 0;
       overflow-y: auto;
       padding: 12px;
       background: #f2f4f8;
@@ -350,26 +353,43 @@ function setupScoreBar() {
       margin-top: 4px;
     }
 
+    /* CHAT INPUT FIX */
+
     #chatForm {
       flex: 0 0 auto;
-      display: flex;
-      gap: 7px;
+      display: flex !important;
+      flex-direction: row !important;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      box-sizing: border-box;
       padding: 10px;
       background: white;
       border-top: 1px solid #ddd;
     }
 
     #chatInput {
-      flex: 1;
-      min-width: 0;
+      display: block;
+      flex: 1 1 0% !important;
+      width: 0 !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      height: 46px;
+      min-height: 46px;
+      max-height: 46px;
+      box-sizing: border-box;
       resize: none;
       border: 1px solid #cbd0da;
       border-radius: 10px;
-      padding: 10px;
-      font: inherit;
-      font-size: 14px;
+      padding: 11px;
+      margin: 0;
+      font-family: inherit;
+      font-size: 16px;
+      line-height: 22px;
       color: #18213a;
       outline: none;
+      overflow-y: auto;
+      -webkit-appearance: none;
     }
 
     #chatInput:focus {
@@ -377,13 +397,23 @@ function setupScoreBar() {
     }
 
     #chatSend {
+      display: block;
+      flex: 0 0 88px !important;
+      width: 88px !important;
+      min-width: 88px !important;
+      max-width: 88px !important;
+      height: 46px;
+      box-sizing: border-box;
       border: 0;
       border-radius: 10px;
-      padding: 0 14px;
+      padding: 0 8px;
+      margin: 0;
       background: #18213a;
       color: white;
       font-weight: 800;
+      font-size: 14px;
       cursor: pointer;
+      -webkit-appearance: none;
     }
 
     #chatSend:disabled {
@@ -622,7 +652,11 @@ function renderScoreBar(s) {
 
   const bar = $("scoreBar");
 
-  if (s.view === "lobby" || s.view === "removed") {
+  if (
+    s.view === "lobby" ||
+    s.status === "lobby" ||
+    s.view === "removed"
+  ) {
     bar.style.display = "none";
     return;
   }
@@ -660,7 +694,8 @@ function render(s) {
   mergeChatMessages(s.chat);
   updateChatButton();
 
-  const inLobbyView = s.view === "lobby";
+  // Recognise the lobby from either the view or the server status.
+  const inLobbyView = s.view === "lobby" || s.status === "lobby";
   const inGame = !inLobbyView;
 
   $("siteHeader").classList.toggle("hidden", inGame);
@@ -695,17 +730,17 @@ function render(s) {
 
   if (inLobbyView) {
     const heading = document.createElement("h2");
-    heading.textContent = "You're back in the lobby!";
+    heading.textContent = "Room lobby";
     area.append(heading);
 
     const waiting = document.createElement("p");
     waiting.textContent = isHost
       ? "You're the host. Start a new game when at least 3 players are ready."
-      : "Waiting for the host to start a new game.";
+      : "Waiting for the host to start the game.";
     area.append(waiting);
 
     const count = document.createElement("p");
-    count.textContent = `${s.players.length} player${s.players.length === 1 ? "" : "s"} in the lobby`;
+    count.textContent = `${s.players.length} player${s.players.length === 1 ? "" : "s"} in the room`;
     area.append(count);
 
     addQuitButton(area);
